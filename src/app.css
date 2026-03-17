@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+@theme {
+  /* Background scale */
+  --color-bg-base: #1e1e1e;
+  --color-bg-surface: #252526;
+  --color-bg-elevated: #2d2d2d;
+  --color-bg-overlay: #3c3c3c;
+  --color-bg-muted: #333333;
+  --color-bg-sunken: #1a1a1a;
+  --color-bg-deep: #0f0f0f;
+
+  /* Border scale */
+  --color-border-default: #333333;
+  --color-border-muted: #282828;
+  --color-border-strong: #555555;
+
+  /* Accent / semantic */
+  --color-accent: #007acc;
+  --color-accent-hover: #0078d4;
+  --color-success: #16825d;
+  --color-success-hover: #1a9e6f;
+  --color-error: #f48771;
+  --color-error-bg: #3d1f1f;
+  --color-error-border: #be1100;
+  --color-warning: #ffd700;
+
+  /* Text scale */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #cccccc;
+  --color-text-tertiary: #999999;
+  --color-text-muted: #888888;
+  --color-text-faint: #666666;
+
+  /* Syntax colors (JSON view / code) */
+  --color-syntax-property: #9cdcfe;
+  --color-syntax-string: #ce9178;
+  --color-syntax-number: #b5cea8;
+  --color-syntax-keyword: #569cd6;
+  --color-syntax-function: #dcdcaa;
+  --color-syntax-link: #4fc1ff;
+
+  /* Message colors */
+  --color-msg-user-bg: #1e2f28;
+  --color-msg-user-border: #16825d;
+  --color-msg-assistant-bg: #1e2533;
+  --color-msg-assistant-border: #0078d4;
+
+  /* Spacing */
+  --spacing-titlebar-h: 38px;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Monaco", "Menlo", "Courier New", monospace;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-default: 200ms ease;
+
+  /* Radii */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+body {
+  @apply m-0 p-0 font-sans bg-bg-base text-text-primary overflow-hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ========================================================================= */
+/* Markdown prose styles                                                      */
+/* ========================================================================= */
+@layer components {
+  .prose {
+    @apply text-text-secondary leading-relaxed text-sm;
+
+    & :is(h1, h2, h3, h4) {
+      @apply text-text-primary mt-4 mb-2 leading-tight;
+    }
+
+    & h1 {
+      @apply text-[1.4em];
+    }
+    & h2 {
+      @apply text-[1.2em];
+    }
+    & h3 {
+      @apply text-[1.1em];
+    }
+
+    & p {
+      @apply my-2;
+    }
+
+    & strong {
+      @apply text-text-primary font-semibold;
+    }
+
+    & a {
+      @apply text-syntax-link no-underline hover:underline;
+    }
+
+    & code {
+      @apply bg-bg-base px-1.5 py-0.5 rounded-sm font-mono text-[13px] text-syntax-string;
+    }
+
+    & pre {
+      @apply bg-bg-deep p-3 rounded-md overflow-x-auto my-2;
+
+      & code {
+        @apply bg-transparent p-0 text-[13px] text-text-secondary;
+      }
+    }
+
+    & :is(ul, ol) {
+      @apply my-2 pl-6;
+    }
+
+    & li {
+      @apply my-1 leading-normal;
+    }
+
+    & blockquote {
+      @apply border-l-[3px] border-border-strong my-2 py-1 px-4 text-text-tertiary bg-white/[0.03] rounded-r-sm;
+    }
+
+    & table {
+      @apply border-collapse my-2 w-full;
+    }
+
+    & :is(th, td) {
+      @apply border border-border-muted px-3 py-2 text-left;
+    }
+
+    & th {
+      @apply bg-bg-elevated text-text-primary font-semibold;
+    }
+
+    & hr {
+      @apply border-0 border-t border-border-muted my-4;
+    }
+
+    & img {
+      @apply max-w-full rounded-sm;
+    }
+  }
+
+  /* Highlight matches */
+  mark {
+    @apply bg-warning text-black px-0.5 rounded-sm font-semibold;
+  }
+}
+
+/* Shiki code block styling override */
+.shiki {
+  @apply bg-bg-deep! p-3 rounded-md overflow-x-auto my-2 text-[13px] leading-relaxed;
+}
