@@ -1,0 +1,32 @@
+[package]
+name = "cluedit"
+version = "0.1.0"
+description = "Claude Code conversation manager"
+edition = "2021"
+
+[lib]
+name = "cluedit_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+tauri = { version = "2.10", features = [] }
+tauri-plugin-opener = "2.5"
+tauri-plugin-dialog = "2.6"
+tauri-plugin-window-state = "2.4"
+tauri-plugin-fs = "2.4"
+notify = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+walkdir = "2"
+regex = "1"
+thiserror = "2"
+tantivy = "0.25"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "6"
+log = "0.4"
+env_logger = "0.11"
