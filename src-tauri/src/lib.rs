@@ -1,4 +1,6 @@
+mod backup_service;
 mod commands;
+mod content_sanitizer;
 mod conversation_analyzer;
 mod conversation_service;
 mod error;
@@ -7,6 +9,7 @@ mod models;
 mod search_indexer;
 mod title_cache;
 
+use backup_service::BackupService;
 use conversation_service::ConversationService;
 use search_indexer::SearchIndexer;
 use std::path::PathBuf;
@@ -14,10 +17,11 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 /// Global application state shared across all Tauri commands.
-/// Both services are created once at startup and persist for the app lifetime,
+/// Services are created once at startup and persist for the app lifetime,
 /// ensuring caches are actually reused across IPC calls.
 pub struct AppState {
     pub conversation_service: ConversationService,
+    pub backup_service: BackupService,
     pub search_indexer: Arc<Mutex<Option<SearchIndexer>>>,
     pub data_dir: PathBuf,
 }
@@ -40,14 +44,17 @@ pub fn run() {
                 .app_data_dir()
                 .expect("Failed to resolve app data directory");
 
-            std::fs::create_dir_all(&data_dir)
-                .expect("Failed to create app data directory");
+            std::fs::create_dir_all(&data_dir).expect("Failed to create app data directory");
 
             let conversation_service = ConversationService::new(&data_dir)
                 .expect("Failed to initialize ConversationService — is ~/.claude/ present?");
 
+            let backup_service =
+                BackupService::new(&data_dir).expect("Failed to initialize BackupService");
+
             app.manage(AppState {
                 conversation_service,
+                backup_service,
                 search_indexer: Arc::new(Mutex::new(None)),
                 data_dir,
             });
@@ -81,11 +88,22 @@ pub fn run() {
             commands::read_conversation,
             commands::search_conversations,
             commands::export_conversation,
+            commands::export_conversation_to_file,
+            commands::export_all_conversations,
             commands::get_conversation_metadata,
             commands::find_parent_conversation,
             commands::start_indexing,
             commands::fast_search,
             commands::get_index_stats,
+            // Backup & branch
+            commands::create_backup,
+            commands::create_backup_at_event,
+            commands::list_backups,
+            commands::list_all_backups,
+            commands::restore_backup,
+            commands::branch_conversation,
+            commands::branch_from_backup,
+            commands::delete_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

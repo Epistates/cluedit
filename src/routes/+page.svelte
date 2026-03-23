@@ -5,7 +5,6 @@
     commandPaletteOpen,
   } from "$lib/stores";
   import { statusStore } from "$lib/stores/statusStore";
-  import Titlebar from "$lib/components/Titlebar.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import ConversationList from "$lib/components/ConversationList.svelte";
@@ -40,9 +39,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<Titlebar />
-
-<div class="flex h-screen overflow-hidden pt-[--spacing-titlebar-h]">
+<div class="flex h-screen overflow-hidden">
   <Sidebar />
   <div class="flex-1 flex flex-col overflow-hidden">
     <Toolbar />

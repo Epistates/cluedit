@@ -10,9 +10,7 @@ use std::path::PathBuf;
 #[serde(tag = "type")]
 pub enum ContentBlock {
     #[serde(rename = "text")]
-    Text {
-        text: String,
-    },
+    Text { text: String },
     #[serde(rename = "tool_use")]
     ToolUse {
         id: String,
@@ -308,12 +306,12 @@ impl ConversationEvent {
     /// Get the message content text if this is a chat message
     pub fn message_text(&self) -> Option<String> {
         match self {
-            Self::User { message, is_meta, .. } if !is_meta => {
-                Some(message.content.extract_text())
-            }
-            Self::Assistant { message, is_meta, .. } if !is_meta => {
-                Some(message.content.extract_text())
-            }
+            Self::User {
+                message, is_meta, ..
+            } if !is_meta => Some(message.content.extract_text()),
+            Self::Assistant {
+                message, is_meta, ..
+            } if !is_meta => Some(message.content.extract_text()),
             _ => None,
         }
     }
@@ -353,7 +351,10 @@ impl ConversationEvent {
     /// Get the logical parent UUID (for continuation detection)
     pub fn logical_parent_uuid(&self) -> Option<&str> {
         match self {
-            Self::User { logical_parent_uuid, .. } => logical_parent_uuid.as_deref(),
+            Self::User {
+                logical_parent_uuid,
+                ..
+            } => logical_parent_uuid.as_deref(),
             _ => None,
         }
     }
@@ -440,4 +441,42 @@ pub enum ExportFormat {
     ShareGPT,
     /// Alpaca instruction format (instruction/input/output triplets)
     Alpaca,
+    /// OpenAI fine-tuning with structured tool_calls and role:"tool" messages
+    ChatMLTools,
+}
+
+// ============================================================================
+// Backup & Branch Models
+// ============================================================================
+
+/// Metadata about a single conversation backup
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupInfo {
+    pub id: String,
+    pub conversation_id: String,
+    pub original_file_path: String,
+    pub backup_file_path: String,
+    pub label: String,
+    pub created_at: String,
+    pub event_count: usize,
+    pub truncated_at_event: Option<usize>,
+    pub size_bytes: u64,
+    pub auto_backup: bool,
+}
+
+/// Result of a conversation branch operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BranchResult {
+    pub new_file_path: String,
+    pub new_conversation_id: String,
+    pub event_count: usize,
+    pub ids_remapped: usize,
+}
+
+/// Result of a bulk export operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportAllResult {
+    pub conversations_exported: usize,
+    pub conversations_skipped: usize,
+    pub output_path: String,
 }

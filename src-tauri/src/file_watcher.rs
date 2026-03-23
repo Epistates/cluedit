@@ -29,14 +29,14 @@ impl FileWatcher {
             loop {
                 match rx.recv() {
                     Ok(Ok(event)) => {
-                        let dominated_by_jsonl = event.paths.iter().any(|p| {
-                            p.extension().and_then(|e| e.to_str()) == Some("jsonl")
-                        });
+                        let dominated_by_jsonl = event
+                            .paths
+                            .iter()
+                            .any(|p| p.extension().and_then(|e| e.to_str()) == Some("jsonl"));
 
-                        let is_relevant = matches!(
-                            event.kind,
-                            EventKind::Create(_) | EventKind::Modify(_)
-                        ) && dominated_by_jsonl;
+                        let is_relevant =
+                            matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_))
+                                && dominated_by_jsonl;
 
                         if is_relevant && last_emit.elapsed() >= debounce {
                             last_emit = Instant::now();
@@ -45,7 +45,8 @@ impl FileWatcher {
                                 .iter()
                                 .map(|p| p.to_string_lossy().to_string())
                                 .collect();
-                            if let Err(e) = app_handle.emit("conversation-changed", &changed_paths) {
+                            if let Err(e) = app_handle.emit("conversation-changed", &changed_paths)
+                            {
                                 log::warn!("Failed to emit conversation-changed: {}", e);
                             }
                         }
@@ -56,8 +57,6 @@ impl FileWatcher {
             }
         });
 
-        Ok(Self {
-            _watcher: watcher,
-        })
+        Ok(Self { _watcher: watcher })
     }
 }

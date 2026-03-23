@@ -32,28 +32,28 @@
     data-tauri-drag-region
     class="text-sm font-semibold text-text-tertiary tracking-wide pointer-events-none"
   >
-    ClueEdit
+    CluEdit
   </span>
 
   {#if !isMac}
     <div class="ml-auto flex items-center">
       <button
         onclick={minimize}
-        class="flex items-center justify-center w-[46px] h-[--spacing-titlebar-h] text-text-muted hover:bg-bg-overlay hover:text-text-primary transition-colors duration-[--transition-fast]"
+        class="flex items-center justify-center w-[46px] h-[--spacing-titlebar-h] text-text-muted hover:bg-bg-overlay hover:text-text-primary transition-colors duration-[--transition-fast] bg-transparent border-none cursor-pointer"
         aria-label="Minimize"
       >
         <Minus size={16} />
       </button>
       <button
         onclick={toggleMaximize}
-        class="flex items-center justify-center w-[46px] h-[--spacing-titlebar-h] text-text-muted hover:bg-bg-overlay hover:text-text-primary transition-colors duration-[--transition-fast]"
+        class="flex items-center justify-center w-[46px] h-[--spacing-titlebar-h] text-text-muted hover:bg-bg-overlay hover:text-text-primary transition-colors duration-[--transition-fast] bg-transparent border-none cursor-pointer"
         aria-label="Maximize"
       >
         <Square size={14} />
       </button>
       <button
         onclick={close}
-        class="flex items-center justify-center w-[46px] h-[--spacing-titlebar-h] text-text-muted hover:bg-red-600 hover:text-text-primary transition-colors duration-[--transition-fast]"
+        class="flex items-center justify-center w-[46px] h-[--spacing-titlebar-h] text-text-muted hover:bg-red-600 hover:text-text-primary transition-colors duration-[--transition-fast] bg-transparent border-none cursor-pointer"
         aria-label="Close"
       >
         <X size={16} />

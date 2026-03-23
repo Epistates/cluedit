@@ -26,10 +26,19 @@
     Wrench,
     ChevronRight,
     ChevronDown,
+    GitBranch,
   } from "lucide-svelte";
   import Skeleton from "./Skeleton.svelte";
 
-  let { conversation }: { conversation: Conversation } = $props();
+  let {
+    conversation,
+    onbranch,
+    branchingEventIndex = null,
+  }: {
+    conversation: Conversation;
+    onbranch?: (e: CustomEvent<{ eventIndex: number }>) => void;
+    branchingEventIndex?: number | null;
+  } = $props();
 
   let openToolCalls = $state(new Set<string>());
 
@@ -123,11 +132,19 @@
     codeBlockPlaceholders.clear();
   }
 
+  // Track both the event and its index in the full events array
   let messages = $derived(
-    conversation.events.filter(
-      (e) => isChatMessage(e) && getMessageContent(e).trim().length > 0
-    )
+    conversation.events
+      .map((e, idx) => ({ event: e, eventIndex: idx }))
+      .filter(
+        ({ event }) => isChatMessage(event) && getMessageContent(event).trim().length > 0
+      )
   );
+
+  function handleBranchFromHere(eventIndex: number) {
+    if (!onbranch || branchingEventIndex !== null) return;
+    onbranch(new CustomEvent("branch", { detail: { eventIndex } }));
+  }
 
   $effect(() => {
     // Trigger Shiki highlighting after messages render
@@ -140,14 +157,14 @@
 
 <div class="h-full overflow-y-auto bg-bg-base" bind:this={containerEl}>
   <div class="p-6 max-w-[900px] mx-auto">
-    {#each messages as event, index (index)}
+    {#each messages as { event, eventIndex }, index (index)}
       {@const isUser = isUserEvent(event)}
       {@const content = getMessageContent(event)}
       {@const toolCalls = getToolCalls(event)}
       {@const timestamp = formatTimestamp(event)}
 
       <div
-        class="mb-6 p-4 rounded-lg border-l-[3px]"
+        class="group/msg mb-6 p-4 rounded-lg border-l-[3px] relative"
         class:bg-msg-user-bg={isUser}
         class:border-l-msg-user-border={isUser}
         class:bg-msg-assistant-bg={!isUser}
@@ -167,9 +184,22 @@
               Assistant
             {/if}
           </span>
-          {#if timestamp}
-            <span class="text-xs text-text-muted">{timestamp}</span>
-          {/if}
+          <div class="flex items-center gap-2">
+            {#if onbranch}
+              <button
+                class="flex items-center gap-1 px-1.5 py-0.5 bg-transparent border border-transparent rounded text-[10px] text-text-faint cursor-pointer transition-all opacity-0 group-hover/msg:opacity-100 hover:!border-accent-hover hover:!text-accent-hover hover:!bg-accent-hover/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                onclick={() => handleBranchFromHere(eventIndex)}
+                disabled={branchingEventIndex !== null}
+                title="Branch conversation from this point (creates a duplicate with new IDs up to this message)"
+              >
+                <GitBranch size={10} />
+                {branchingEventIndex === eventIndex ? "branching..." : "branch here"}
+              </button>
+            {/if}
+            {#if timestamp}
+              <span class="text-xs text-text-muted">{timestamp}</span>
+            {/if}
+          </div>
         </div>
 
         {#if content}

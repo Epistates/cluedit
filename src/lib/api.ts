@@ -7,6 +7,9 @@ import type {
   ExportFormat,
   FastSearchResult,
   IndexStats,
+  BackupInfo,
+  BranchResult,
+  ExportAllResult,
 } from "./types";
 
 export async function listProjects(): Promise<ProjectInfo[]> {
@@ -87,4 +90,85 @@ export async function fastSearch(
  */
 export async function getIndexStats(): Promise<IndexStats> {
   return invoke("get_index_stats");
+}
+
+// ============================================================================
+// BACKUP & BRANCH API
+// ============================================================================
+
+/** Create a full backup of a conversation */
+export async function createBackup(
+  filePath: string,
+  label: string
+): Promise<BackupInfo> {
+  return invoke("create_backup", { filePath, label });
+}
+
+/** Create a backup truncated at a specific event index (0-based, inclusive) */
+export async function createBackupAtEvent(
+  filePath: string,
+  eventIndex: number,
+  label: string
+): Promise<BackupInfo> {
+  return invoke("create_backup_at_event", { filePath, eventIndex, label });
+}
+
+/** List all backups for a specific conversation */
+export async function listBackups(
+  conversationId: string
+): Promise<BackupInfo[]> {
+  return invoke("list_backups", { conversationId });
+}
+
+/** List all backups across all conversations */
+export async function listAllBackups(): Promise<BackupInfo[]> {
+  return invoke("list_all_backups");
+}
+
+/** Restore a conversation from a backup. Returns the auto-created safety backup. */
+export async function restoreBackup(backupId: string): Promise<BackupInfo> {
+  return invoke("restore_backup", { backupId });
+}
+
+/** Branch a conversation: duplicate with regenerated IDs, optionally truncated */
+export async function branchConversation(
+  sourcePath: string,
+  truncateAtEvent?: number
+): Promise<BranchResult> {
+  return invoke("branch_conversation", { sourcePath, truncateAtEvent });
+}
+
+/** Branch from a backup: create new conversation from backup with regenerated IDs */
+export async function branchFromBackup(
+  backupId: string
+): Promise<BranchResult> {
+  return invoke("branch_from_backup", { backupId });
+}
+
+/** Delete a backup and its file */
+export async function deleteBackup(backupId: string): Promise<void> {
+  return invoke("delete_backup", { backupId });
+}
+
+// ============================================================================
+// BULK EXPORT API
+// ============================================================================
+
+/** Export a single conversation directly to a file (backend writes, bypasses FS scope) */
+export async function exportConversationToFile(
+  filePath: string,
+  format: ExportFormat,
+  outputPath: string
+): Promise<void> {
+  return invoke("export_conversation_to_file", { filePath, format, outputPath });
+}
+
+/** Export all conversations in the given projects to a file or directory.
+ *  Pass empty projectPaths to export ALL projects. */
+export async function exportAllConversations(
+  projectPaths: string[],
+  format: ExportFormat,
+  outputPath: string
+): Promise<ExportAllResult> {
+  return invoke("export_all_conversations", { projectPaths, format, outputPath });
 }

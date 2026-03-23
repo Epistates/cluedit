@@ -1,12 +1,21 @@
 <script lang="ts">
-  import { selectedConversation, viewMode as globalViewMode } from "$lib/stores";
+  import { selectedConversation, viewMode as globalViewMode, conversations } from "$lib/stores";
   import ConversationView from "./ConversationView.svelte";
   import JsonView from "./JsonView.svelte";
   import SearchView from "./ConversationSearchView.svelte";
   import { save } from "@tauri-apps/plugin-dialog";
-  import { writeTextFile } from "@tauri-apps/plugin-fs";
-  import { exportConversation } from "$lib/api";
-  import type { ExportFormat } from "$lib/types";
+  import {
+    exportConversationToFile,
+    createBackup,
+    listBackups,
+    restoreBackup,
+    branchConversation,
+    branchFromBackup,
+    deleteBackup,
+    readConversation,
+    listConversations,
+  } from "$lib/api";
+  import type { ExportFormat, BackupInfo } from "$lib/types";
   import { Tabs } from "bits-ui";
   import { DropdownMenu } from "bits-ui";
   import {
@@ -31,19 +40,212 @@
     GraduationCap,
     Database,
     BookOpen,
+    Archive,
+    Plus,
+    RotateCcw,
+    Trash2,
+    GitBranch,
+    Clock,
+    Shield,
+    Copy,
+    Scissors,
+    Loader2,
   } from "lucide-svelte";
 
   let searchQuery = $state("");
   let conversation = $derived($selectedConversation);
   let exporting = $state(false);
 
+  // Backup state
+  let backups = $state<BackupInfo[]>([]);
+  let backupLabel = $state("");
+  let creatingBackup = $state(false);
+  let restoringId = $state<string | null>(null);
+  let branchingFull = $state(false);
+  let branchingBackupId = $state<string | null>(null);
+  let branchingEventIndex = $state<number | null>(null);
+  let deletingId = $state<string | null>(null);
+  let backupError = $state<string | null>(null);
+  let backupSuccess = $state<string | null>(null);
+
+  /// Derive the project directory path from a conversation's file_path.
+  /// Uses lastIndexOf to safely strip the final path component.
+  function getProjectPath(filePath: string): string {
+    const lastSlash = filePath.lastIndexOf("/");
+    return lastSlash > 0 ? filePath.substring(0, lastSlash) : filePath;
+  }
+
+  async function refreshConversationList() {
+    const conv = $selectedConversation;
+    if (!conv?.metadata.project) return;
+    try {
+      const projectPath = getProjectPath(conv.metadata.file_path);
+      const updated = await listConversations(projectPath);
+      conversations.set(updated);
+    } catch (e) {
+      console.error("Failed to refresh conversation list:", e);
+    }
+  }
+
+  async function loadBackups() {
+    if (!conversation) return;
+    try {
+      backups = await listBackups(conversation.metadata.id);
+      backupError = null;
+    } catch (e) {
+      backupError = `Failed to load backups: ${e}`;
+      console.error("Failed to load backups:", e);
+    }
+  }
+
+  async function handleCreateBackup() {
+    if (!conversation || creatingBackup) return;
+    const label = backupLabel.trim() || `Backup ${new Date().toLocaleString()}`;
+    creatingBackup = true;
+    backupError = null;
+    backupSuccess = null;
+
+    try {
+      const info = await createBackup(conversation.metadata.file_path, label);
+      backupSuccess = `Backup created: ${info.event_count} events, ${formatBytes(info.size_bytes)}`;
+      backupLabel = "";
+      await loadBackups();
+    } catch (e) {
+      backupError = `Backup failed: ${e}`;
+    } finally {
+      creatingBackup = false;
+    }
+  }
+
+  async function handleRestore(backup: BackupInfo) {
+    if (restoringId) return;
+    restoringId = backup.id;
+    backupError = null;
+    backupSuccess = null;
+
+    // Capture file_path before any reactive updates
+    const filePath = conversation!.metadata.file_path;
+
+    try {
+      const safetyBackup = await restoreBackup(backup.id);
+      const safetyMsg = safetyBackup.id
+        ? `Safety backup created: ${safetyBackup.id.slice(0, 8)}`
+        : safetyBackup.label;
+      backupSuccess = `Restored to "${backup.label}". ${safetyMsg}`;
+      await loadBackups();
+      // Reload the conversation to reflect restored state
+      const refreshed = await readConversation(filePath);
+      selectedConversation.set(refreshed);
+      await refreshConversationList();
+    } catch (e) {
+      backupError = `Restore failed: ${e}`;
+    } finally {
+      restoringId = null;
+    }
+  }
+
+  async function handleBranchFull() {
+    if (!conversation || branchingFull) return;
+    branchingFull = true;
+    backupError = null;
+    backupSuccess = null;
+
+    try {
+      const result = await branchConversation(conversation.metadata.file_path);
+      backupSuccess = `Branched: ${result.new_conversation_id.slice(0, 8)}... (${result.event_count} events, ${result.ids_remapped} IDs remapped)`;
+      await refreshConversationList();
+    } catch (e) {
+      backupError = `Branch failed: ${e}`;
+    } finally {
+      branchingFull = false;
+    }
+  }
+
+  async function handleBranchFromBackup(backup: BackupInfo) {
+    if (branchingBackupId) return;
+    branchingBackupId = backup.id;
+    backupError = null;
+    backupSuccess = null;
+
+    try {
+      const result = await branchFromBackup(backup.id);
+      backupSuccess = `Branched from backup: ${result.new_conversation_id.slice(0, 8)}... (${result.event_count} events, ${result.ids_remapped} IDs remapped)`;
+      await refreshConversationList();
+    } catch (e) {
+      backupError = `Branch from backup failed: ${e}`;
+    } finally {
+      branchingBackupId = null;
+    }
+  }
+
+  async function handleDelete(backup: BackupInfo) {
+    if (deletingId) return;
+    deletingId = backup.id;
+    backupError = null;
+    backupSuccess = null;
+
+    try {
+      await deleteBackup(backup.id);
+      backupSuccess = `Backup deleted`;
+      await loadBackups();
+    } catch (e) {
+      backupError = `Delete failed: ${e}`;
+    } finally {
+      deletingId = null;
+    }
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function formatBackupDate(isoDate: string): string {
+    return new Date(isoDate).toLocaleString();
+  }
+
+  // Handle branch-from-here events dispatched by ConversationView.
+  // Returns a promise so the child can track completion.
+  async function handleBranchFromEvent(e: CustomEvent<{ eventIndex: number }>) {
+    if (!conversation) return;
+    branchingEventIndex = e.detail.eventIndex;
+    backupError = null;
+    backupSuccess = null;
+
+    try {
+      const result = await branchConversation(
+        conversation.metadata.file_path,
+        e.detail.eventIndex
+      );
+      backupSuccess = `Branched at event ${e.detail.eventIndex}: ${result.new_conversation_id.slice(0, 8)}... (${result.event_count} events)`;
+      await refreshConversationList();
+    } catch (err) {
+      backupError = `Branch failed: ${err}`;
+    } finally {
+      branchingEventIndex = null;
+    }
+  }
+
+  let exportSuccess = $state<string | null>(null);
+
+  function cleanProjectName(raw: string): string {
+    const segments = raw.split("-").filter(Boolean);
+    if (segments.length === 0) return raw;
+    const last = segments[segments.length - 1];
+    const generic = ["work", "src", "dev", "home", "Users", "tmp", "var"];
+    if (segments.length >= 2 && generic.includes(last)) {
+      return segments.slice(-2).join("-");
+    }
+    return last;
+  }
+
   async function handleExport(format: ExportFormat) {
     if (!conversation || exporting) return;
     exporting = true;
+    exportSuccess = null;
 
     try {
-      const content = await exportConversation(conversation.metadata.file_path, format);
-
       let extension = "txt";
       let filterName = "Text Files";
       if (format === "Json" || format === "JsonPretty") {
@@ -52,7 +254,7 @@
       } else if (format === "Markdown") {
         extension = "md";
         filterName = "Markdown Files";
-      } else if (format === "ChatML" || format === "Alpaca") {
+      } else if (format === "ChatML" || format === "ChatMLTools" || format === "Alpaca") {
         extension = "jsonl";
         filterName = "JSONL Files";
       } else if (format === "ShareGPT") {
@@ -60,15 +262,26 @@
         filterName = "JSON Files";
       }
 
-      const filePath = await save({
-        defaultPath: `${conversation.metadata.id}.${extension}`,
+      // project_name-conversation_id
+      const project = conversation.metadata.project
+        ? cleanProjectName(conversation.metadata.project)
+        : "export";
+      const id = conversation.metadata.id.slice(0, 8);
+      const baseName = `${project}-${id}`;
+
+      const outputPath = await save({
+        defaultPath: `${baseName}.${extension}`,
         filters: [{ name: filterName, extensions: [extension] }],
       });
 
-      if (filePath) {
-        await writeTextFile(filePath, content);
+      if (outputPath) {
+        await exportConversationToFile(conversation.metadata.file_path, format, outputPath);
+        exportSuccess = `Exported as ${format}`;
+        setTimeout(() => { exportSuccess = null; }, 4000);
       }
     } catch (e) {
+      exportSuccess = `Export failed: ${e}`;
+      setTimeout(() => { exportSuccess = null; }, 5000);
       console.error("Export failed:", e);
     } finally {
       exporting = false;
@@ -116,8 +329,13 @@
             class="flex items-center gap-1.5 px-3 py-1.5 bg-success border-none rounded-md text-text-primary text-[13px] cursor-pointer transition-colors duration-[--transition-default] hover:bg-success-hover disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={exporting}
           >
-            <FileDown size={14} />
-            {exporting ? "Exporting..." : "Export"}
+            {#if exporting}
+              <Loader2 size={14} class="animate-spin" />
+              Exporting...
+            {:else}
+              <FileDown size={14} />
+              Export
+            {/if}
             <ChevronDown size={12} />
           </DropdownMenu.Trigger>
           <DropdownMenu.Content
@@ -160,7 +378,14 @@
               onSelect={() => handleExport("ChatML")}
             >
               <GraduationCap size={14} class="text-text-muted" />
-              ChatML (OpenAI)
+              ChatML (text only)
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              class="flex items-center gap-2 w-full px-3 py-2 text-left text-[13px] text-text-secondary cursor-pointer bg-transparent border-none hover:bg-bg-overlay hover:text-text-primary transition-colors duration-[--transition-fast]"
+              onSelect={() => handleExport("ChatMLTools")}
+            >
+              <Wrench size={14} class="text-text-muted" />
+              ChatML + Tools (agentic)
             </DropdownMenu.Item>
             <DropdownMenu.Item
               class="flex items-center gap-2 w-full px-3 py-2 text-left text-[13px] text-text-secondary cursor-pointer bg-transparent border-none hover:bg-bg-overlay hover:text-text-primary transition-colors duration-[--transition-fast]"
@@ -180,6 +405,12 @@
         </DropdownMenu.Root>
       </div>
     </div>
+
+    {#if exportSuccess}
+      <div class="mx-5 mt-2 px-3 py-1.5 rounded-md text-[12px] {exportSuccess.startsWith('Export failed') ? 'bg-danger/10 border border-danger/30 text-danger' : 'bg-success/10 border border-success/30 text-success-hover'}">
+        {exportSuccess}
+      </div>
+    {/if}
 
     <Tabs.Root value="conversation" class="flex-1 flex flex-col overflow-hidden">
       <Tabs.List class="flex gap-1 bg-bg-base rounded-md p-1 mx-5 mt-2">
@@ -211,11 +442,19 @@
           <BarChart3 size={14} />
           Stats
         </Tabs.Trigger>
+        <Tabs.Trigger
+          value="backups"
+          class="flex items-center gap-1.5 px-3 py-1.5 border-none bg-transparent text-text-tertiary text-[13px] font-medium cursor-pointer rounded-sm transition-all duration-[--transition-default] hover:bg-bg-surface hover:text-text-secondary data-[state=active]:bg-accent-hover data-[state=active]:text-text-primary"
+          onclick={loadBackups}
+        >
+          <Archive size={14} />
+          Backups
+        </Tabs.Trigger>
       </Tabs.List>
 
       <div class="flex-1 overflow-hidden relative">
         <Tabs.Content value="conversation" class="h-full">
-          <ConversationView {conversation} />
+          <ConversationView {conversation} onbranch={handleBranchFromEvent} {branchingEventIndex} />
         </Tabs.Content>
         <Tabs.Content value="json" class="h-full">
           <JsonView data={conversation} />
@@ -335,6 +574,145 @@
                   </div>
                 {/each}
               </div>
+            </div>
+          {/if}
+        </Tabs.Content>
+
+        <!-- Backups Tab -->
+        <Tabs.Content value="backups" class="h-full overflow-y-auto p-6">
+          <!-- Status messages -->
+          {#if backupSuccess}
+            <div class="mb-4 p-3 bg-success/10 border border-success/30 rounded-md text-[13px] text-success-hover flex items-center justify-between">
+              <span>{backupSuccess}</span>
+              <button
+                class="text-text-muted hover:text-text-primary bg-transparent border-none cursor-pointer text-xs"
+                onclick={() => backupSuccess = null}
+              >&times;</button>
+            </div>
+          {/if}
+          {#if backupError}
+            <div class="mb-4 p-3 bg-danger/10 border border-danger/30 rounded-md text-[13px] text-danger flex items-center justify-between">
+              <span>{backupError}</span>
+              <button
+                class="text-text-muted hover:text-text-primary bg-transparent border-none cursor-pointer text-xs"
+                onclick={() => backupError = null}
+              >&times;</button>
+            </div>
+          {/if}
+
+          <!-- Actions -->
+          <div class="flex flex-wrap gap-3 mb-6">
+            <!-- Create Backup -->
+            <div class="flex items-center gap-2 flex-1 min-w-[300px]">
+              <input
+                type="text"
+                bind:value={backupLabel}
+                placeholder="Backup label (optional)"
+                class="flex-1 px-3 py-1.5 bg-bg-surface border border-border-default rounded-md text-[13px] text-text-primary placeholder:text-text-faint outline-none focus:border-accent-hover transition-colors"
+                onkeydown={(e) => { if (e.key === "Enter") handleCreateBackup(); }}
+              />
+              <button
+                class="flex items-center gap-1.5 px-3 py-1.5 bg-success border-none rounded-md text-text-primary text-[13px] cursor-pointer transition-colors hover:bg-success-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                onclick={handleCreateBackup}
+                disabled={creatingBackup}
+              >
+                <Plus size={14} />
+                {creatingBackup ? "Creating..." : "Create Backup"}
+              </button>
+            </div>
+
+            <!-- Branch Full Conversation -->
+            <button
+              class="flex items-center gap-1.5 px-3 py-1.5 bg-accent-hover border-none rounded-md text-text-primary text-[13px] cursor-pointer transition-colors hover:bg-accent-active disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              onclick={handleBranchFull}
+              disabled={branchingFull}
+              title="Duplicate this conversation with new IDs so both can continue independently"
+            >
+              <Copy size={14} />
+              {branchingFull ? "Branching..." : "Duplicate Conversation"}
+            </button>
+          </div>
+
+          <!-- Backup List -->
+          <h3 class="text-text-secondary text-sm m-0 mb-3 font-semibold">
+            Backups ({backups.length})
+          </h3>
+
+          {#if backups.length === 0}
+            <div class="text-center py-12 text-text-muted">
+              <Archive size={32} class="mx-auto mb-3 opacity-40" />
+              <p class="m-0 text-sm">No backups yet</p>
+              <p class="m-0 mt-1 text-xs text-text-faint">Create a backup to save the current conversation state</p>
+            </div>
+          {:else}
+            <div class="flex flex-col gap-3">
+              {#each backups.toReversed() as backup (backup.id)}
+                <div class="bg-bg-surface border border-border-default rounded-lg p-4 transition-colors hover:border-border-strong">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2 mb-1">
+                        {#if backup.auto_backup}
+                          <Shield size={12} class="text-warning shrink-0" />
+                        {:else}
+                          <Archive size={12} class="text-accent-hover shrink-0" />
+                        {/if}
+                        <span class="text-[13px] font-medium text-text-primary truncate">
+                          {backup.label}
+                        </span>
+                        {#if backup.auto_backup}
+                          <span class="text-[10px] bg-warning/20 text-warning px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider">
+                            auto
+                          </span>
+                        {/if}
+                        {#if backup.truncated_at_event !== null}
+                          <span class="text-[10px] bg-accent-hover/20 text-accent-hover px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5">
+                            <Scissors size={9} />
+                            @{backup.truncated_at_event}
+                          </span>
+                        {/if}
+                      </div>
+                      <div class="flex items-center gap-3 text-xs text-text-faint">
+                        <span class="inline-flex items-center gap-1">
+                          <Clock size={10} />
+                          {formatBackupDate(backup.created_at)}
+                        </span>
+                        <span>{backup.event_count} events</span>
+                        <span>{formatBytes(backup.size_bytes)}</span>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <button
+                        class="flex items-center gap-1 px-2 py-1 bg-transparent border border-border-default rounded text-[11px] text-text-secondary cursor-pointer transition-colors hover:bg-bg-overlay hover:border-accent-hover hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                        onclick={() => handleRestore(backup)}
+                        disabled={restoringId === backup.id}
+                        title="Restore conversation to this backup (auto-saves current state first)"
+                      >
+                        <RotateCcw size={11} />
+                        {restoringId === backup.id ? "..." : "Restore"}
+                      </button>
+                      <button
+                        class="flex items-center gap-1 px-2 py-1 bg-transparent border border-border-default rounded text-[11px] text-text-secondary cursor-pointer transition-colors hover:bg-bg-overlay hover:border-accent-hover hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                        onclick={() => handleBranchFromBackup(backup)}
+                        disabled={branchingBackupId === backup.id}
+                        title="Create a new conversation from this backup with fresh IDs"
+                      >
+                        <GitBranch size={11} />
+                        {branchingBackupId === backup.id ? "..." : "Branch"}
+                      </button>
+                      <button
+                        class="flex items-center gap-1 px-2 py-1 bg-transparent border border-border-default rounded text-[11px] text-text-secondary cursor-pointer transition-colors hover:bg-danger/10 hover:border-danger/50 hover:text-danger disabled:opacity-50 disabled:cursor-not-allowed"
+                        onclick={() => handleDelete(backup)}
+                        disabled={deletingId === backup.id}
+                        title="Delete this backup"
+                      >
+                        <Trash2 size={11} />
+                        {deletingId === backup.id ? "..." : ""}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              {/each}
             </div>
           {/if}
         </Tabs.Content>

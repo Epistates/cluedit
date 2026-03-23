@@ -13,16 +13,51 @@
     setError,
     setMessage,
   } from "$lib/stores/statusStore";
-  import { listProjects, listConversations, startIndexing } from "$lib/api";
+  import { listProjects, listConversations, startIndexing, exportAllConversations } from "$lib/api";
+  import { save } from "@tauri-apps/plugin-dialog";
   import { listen } from "@tauri-apps/api/event";
-  import type { IndexingProgress } from "$lib/types";
-  import { FolderOpen, ChevronLeft, ChevronRight } from "lucide-svelte";
+  import type { IndexingProgress, ExportFormat, ExportAllResult } from "$lib/types";
+  import { FolderOpen, ChevronLeft, ChevronRight, FileDown, Loader2 } from "lucide-svelte";
+  import { DropdownMenu } from "bits-ui";
   import Skeleton from "./Skeleton.svelte";
 
   let loading = $state(false);
   let error: string | null = $state(null);
   let unlisten: (() => void) | null = null;
   let filterQuery = $state("");
+  let exportingAll = $state(false);
+  let exportMsg = $state<string | null>(null);
+
+  async function handleExportAllProjects(format: ExportFormat) {
+    if (exportingAll) return;
+    exportingAll = true;
+    exportMsg = null;
+
+    try {
+      let ext = "jsonl";
+      if (format === "ShareGPT") ext = "json";
+
+      const outputPath = await save({
+        defaultPath: `all_projects_${format.toLowerCase()}.${ext}`,
+        filters: [{ name: ext === "json" ? "JSON Files" : "JSONL Files", extensions: [ext] }],
+      });
+
+      if (!outputPath) {
+        exportingAll = false;
+        return;
+      }
+
+      // Empty array = all projects
+      const result: ExportAllResult = await exportAllConversations([], format, outputPath);
+      exportMsg = `Exported ${result.conversations_exported} conversations${result.conversations_skipped > 0 ? ` (${result.conversations_skipped} skipped)` : ""}`;
+      setTimeout(() => { exportMsg = null; }, 5000);
+    } catch (e) {
+      exportMsg = `Export failed: ${e}`;
+      setTimeout(() => { exportMsg = null; }, 5000);
+    } finally {
+      exportingAll = false;
+    }
+  }
 
   let filteredProjects = $derived(
     filterQuery
@@ -149,7 +184,7 @@
   class:w-[280px]={!$sidebarCollapsed}
   class:w-[50px]={$sidebarCollapsed}
 >
-  <div class="flex items-center justify-between p-4 pt-2 border-b border-border-default">
+  <div class="flex items-center justify-between p-4 border-b border-border-default">
     {#if !$sidebarCollapsed}
       <h2 class="m-0 text-lg font-semibold text-text-primary">Projects</h2>
     {/if}
@@ -167,7 +202,45 @@
   </div>
 
   {#if !$sidebarCollapsed}
-    <div class="px-3 py-2">
+    <div class="px-3 py-2 flex flex-col gap-2 border-b border-border-default">
+      <!-- Export All Projects -->
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger
+          class="flex items-center justify-center gap-2 w-full px-3 py-2 bg-bg-surface border border-border-default rounded-md text-sm text-text-secondary cursor-pointer transition-colors hover:bg-bg-overlay hover:text-text-primary hover:border-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={exportingAll}
+        >
+          {#if exportingAll}
+            <Loader2 size={14} class="animate-spin text-accent-hover" />
+            Exporting...
+          {:else}
+            <FileDown size={14} />
+            Export All Projects
+          {/if}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content
+          class="min-w-[180px] mt-1 bg-bg-elevated border border-border-default rounded-md shadow-lg z-50 py-1"
+        >
+          {@const itemClass = "flex items-center gap-2 w-full px-3 py-2 text-left text-[13px] text-text-secondary cursor-pointer bg-transparent border-none hover:bg-bg-overlay hover:text-text-primary transition-colors"}
+          <DropdownMenu.Item class={itemClass} onSelect={() => handleExportAllProjects("ChatML")}>
+            ChatML (text only)
+          </DropdownMenu.Item>
+          <DropdownMenu.Item class={itemClass} onSelect={() => handleExportAllProjects("ChatMLTools")}>
+            ChatML + Tools (agentic)
+          </DropdownMenu.Item>
+          <DropdownMenu.Item class={itemClass} onSelect={() => handleExportAllProjects("ShareGPT")}>
+            ShareGPT
+          </DropdownMenu.Item>
+          <DropdownMenu.Item class={itemClass} onSelect={() => handleExportAllProjects("Alpaca")}>
+            Alpaca
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+
+      {#if exportMsg}
+        <div class="text-[11px] text-success-hover">{exportMsg}</div>
+      {/if}
+
+      <!-- Filter -->
       <input
         type="text"
         bind:value={filterQuery}

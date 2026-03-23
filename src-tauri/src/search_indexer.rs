@@ -109,7 +109,9 @@ impl SearchIndexer {
             let searcher = reader.searcher();
             let id_field = schema.get_field("conversation_id").unwrap();
             let modified_field = schema.get_field("modified").unwrap();
-            if let Ok(doc_addresses) = searcher.search(&AllQuery, &tantivy::collector::DocSetCollector) {
+            if let Ok(doc_addresses) =
+                searcher.search(&AllQuery, &tantivy::collector::DocSetCollector)
+            {
                 for doc_address in doc_addresses {
                     if let Ok(doc) = searcher.doc::<tantivy::TantivyDocument>(doc_address) {
                         let conv_id = doc
@@ -325,14 +327,16 @@ impl SearchIndexer {
         let mut user_messages = Vec::new();
         let mut assistant_messages = Vec::new();
 
-        for line in reader.lines().filter_map(|l| l.ok()) {
+        for line in reader.lines().map_while(|l| l.ok()) {
             if line.trim().is_empty() {
                 continue;
             }
 
             match serde_json::from_str::<ConversationEvent>(&line) {
                 Ok(event) => match &event {
-                    ConversationEvent::User { message, is_meta, .. } => {
+                    ConversationEvent::User {
+                        message, is_meta, ..
+                    } => {
                         if !is_meta {
                             let text = message.content.extract_text();
                             if !text.is_empty() {
@@ -340,7 +344,9 @@ impl SearchIndexer {
                             }
                         }
                     }
-                    ConversationEvent::Assistant { message, is_meta, .. } => {
+                    ConversationEvent::Assistant {
+                        message, is_meta, ..
+                    } => {
                         if !is_meta {
                             let text = message.content.extract_text();
                             if !text.is_empty() {
@@ -348,7 +354,9 @@ impl SearchIndexer {
                             }
                         }
                     }
-                    ConversationEvent::Summary { summary: Some(s), .. } => {
+                    ConversationEvent::Summary {
+                        summary: Some(s), ..
+                    } => {
                         if title.is_none() {
                             title = Some(s.clone());
                         }
@@ -372,11 +380,7 @@ impl SearchIndexer {
             title = Some(truncate_utf8(&user_messages[0], 100));
         }
 
-        Ok((
-            title,
-            user_messages.join(" "),
-            assistant_messages.join(" "),
-        ))
+        Ok((title, user_messages.join(" "), assistant_messages.join(" ")))
     }
 
     /// Search conversations with relevance ranking
@@ -468,10 +472,7 @@ impl SearchIndexer {
             "indexed_conversations".to_string(),
             searcher.num_docs() as usize,
         );
-        stats.insert(
-            "num_segments".to_string(),
-            searcher.segment_readers().len(),
-        );
+        stats.insert("num_segments".to_string(), searcher.segment_readers().len());
 
         Ok(stats)
     }

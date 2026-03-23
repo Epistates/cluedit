@@ -5,6 +5,80 @@ use crate::AppState;
 use std::path::PathBuf;
 use tauri::{Emitter, State};
 
+// ============================================================================
+// BACKUP & BRANCH COMMANDS
+// ============================================================================
+
+/// Create a full backup of a conversation
+#[tauri::command]
+pub fn create_backup(
+    state: State<'_, AppState>,
+    file_path: String,
+    label: String,
+) -> Result<BackupInfo> {
+    state.backup_service.create_backup(&file_path, &label)
+}
+
+/// Create a backup truncated at a specific event index (0-based, inclusive)
+#[tauri::command]
+pub fn create_backup_at_event(
+    state: State<'_, AppState>,
+    file_path: String,
+    event_index: usize,
+    label: String,
+) -> Result<BackupInfo> {
+    state
+        .backup_service
+        .create_backup_at_event(&file_path, event_index, &label)
+}
+
+/// List all backups for a specific conversation
+#[tauri::command]
+pub fn list_backups(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<Vec<BackupInfo>> {
+    state.backup_service.list_backups(&conversation_id)
+}
+
+/// List all backups across all conversations
+#[tauri::command]
+pub fn list_all_backups(state: State<'_, AppState>) -> Result<Vec<BackupInfo>> {
+    state.backup_service.list_all_backups()
+}
+
+/// Restore a conversation from a backup.
+/// Returns the safety backup that was automatically created before restoring.
+#[tauri::command]
+pub fn restore_backup(state: State<'_, AppState>, backup_id: String) -> Result<BackupInfo> {
+    state.backup_service.restore_backup(&backup_id)
+}
+
+/// Branch a conversation: duplicate with all IDs regenerated.
+/// Optionally truncate at a specific event index.
+#[tauri::command]
+pub fn branch_conversation(
+    state: State<'_, AppState>,
+    source_path: String,
+    truncate_at_event: Option<usize>,
+) -> Result<BranchResult> {
+    state
+        .backup_service
+        .branch_conversation(&source_path, truncate_at_event)
+}
+
+/// Branch from a backup: create a new conversation from a backup with regenerated IDs.
+#[tauri::command]
+pub fn branch_from_backup(state: State<'_, AppState>, backup_id: String) -> Result<BranchResult> {
+    state.backup_service.branch_from_backup(&backup_id)
+}
+
+/// Delete a backup and its file
+#[tauri::command]
+pub fn delete_backup(state: State<'_, AppState>, backup_id: String) -> Result<()> {
+    state.backup_service.delete_backup(&backup_id)
+}
+
 /// List all Claude projects
 #[tauri::command]
 pub fn list_projects(state: State<'_, AppState>) -> Result<Vec<ProjectInfo>> {
@@ -22,10 +96,7 @@ pub fn list_conversations(
 
 /// Read a full conversation
 #[tauri::command]
-pub fn read_conversation(
-    state: State<'_, AppState>,
-    file_path: String,
-) -> Result<Conversation> {
+pub fn read_conversation(state: State<'_, AppState>, file_path: String) -> Result<Conversation> {
     state.conversation_service.read_conversation(&file_path)
 }
 
@@ -58,6 +129,33 @@ pub fn export_conversation(
         .export_conversation(&file_path, format)
 }
 
+/// Export a single conversation directly to a file (bypasses frontend FS scope).
+#[tauri::command]
+pub fn export_conversation_to_file(
+    state: State<'_, AppState>,
+    file_path: String,
+    format: ExportFormat,
+    output_path: String,
+) -> Result<()> {
+    state
+        .conversation_service
+        .export_conversation_to_file(&file_path, format, &output_path)
+}
+
+/// Export all conversations in the given projects to a file or directory.
+/// Pass empty project_paths to export ALL projects.
+#[tauri::command]
+pub fn export_all_conversations(
+    state: State<'_, AppState>,
+    project_paths: Vec<String>,
+    format: ExportFormat,
+    output_path: String,
+) -> Result<ExportAllResult> {
+    state
+        .conversation_service
+        .export_all_conversations(project_paths, format, &output_path)
+}
+
 /// Get metadata for a single conversation without loading all events
 #[tauri::command]
 pub fn get_conversation_metadata(
@@ -74,7 +172,9 @@ pub fn find_parent_conversation(
     state: State<'_, AppState>,
     parent_uuid: String,
 ) -> Result<Option<String>> {
-    state.conversation_service.find_conversation_by_uuid(&parent_uuid)
+    state
+        .conversation_service
+        .find_conversation_by_uuid(&parent_uuid)
 }
 
 // ============================================================================
@@ -89,7 +189,10 @@ pub async fn start_indexing(
     state: State<'_, AppState>,
     project_paths: Vec<String>,
 ) -> Result<()> {
-    log::info!("start_indexing called with {} projects", project_paths.len());
+    log::info!(
+        "start_indexing called with {} projects",
+        project_paths.len()
+    );
 
     let indexer = {
         let mut indexer_lock = state.search_indexer.lock().unwrap();

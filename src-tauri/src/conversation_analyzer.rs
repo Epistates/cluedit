@@ -51,7 +51,11 @@ impl ConversationAnalyzer {
     }
 
     /// Analyze a conversation file to extract rich metadata
-    pub fn analyze(&self, conversation_path: &Path, _conversation_id: &str) -> Result<AnalysisResult> {
+    pub fn analyze(
+        &self,
+        conversation_path: &Path,
+        _conversation_id: &str,
+    ) -> Result<AnalysisResult> {
         let parsed = self.parse_conversation_file(conversation_path)?;
 
         let title = if !parsed.user_messages.is_empty() {
@@ -88,10 +92,7 @@ impl ConversationAnalyzer {
     }
 
     /// Parse conversation file using typed ConversationEvent models
-    fn parse_conversation_file(
-        &self,
-        conversation_path: &Path,
-    ) -> Result<ParseResult> {
+    fn parse_conversation_file(&self, conversation_path: &Path) -> Result<ParseResult> {
         let file = File::open(conversation_path)?;
         let reader = BufReader::new(file);
 
@@ -130,7 +131,12 @@ impl ConversationAnalyzer {
                     }
 
                     match &event {
-                        ConversationEvent::User { message, is_meta, session_id, .. } => {
+                        ConversationEvent::User {
+                            message,
+                            is_meta,
+                            session_id,
+                            ..
+                        } => {
                             if let Some(sid) = session_id {
                                 session_ids.insert(sid.clone());
                             }
@@ -142,7 +148,12 @@ impl ConversationAnalyzer {
                                 }
                             }
                         }
-                        ConversationEvent::Assistant { message, is_meta, session_id, .. } => {
+                        ConversationEvent::Assistant {
+                            message,
+                            is_meta,
+                            session_id,
+                            ..
+                        } => {
                             if let Some(sid) = session_id {
                                 session_ids.insert(sid.clone());
                             }
@@ -150,17 +161,22 @@ impl ConversationAnalyzer {
                                 total_message_count += 1;
                                 // Extract token usage
                                 if let Some(usage) = &message.usage {
-                                    if let Some(input) = usage.get("input_tokens").and_then(|v| v.as_u64()) {
+                                    if let Some(input) =
+                                        usage.get("input_tokens").and_then(|v| v.as_u64())
+                                    {
                                         total_input_tokens += input;
                                     }
-                                    if let Some(output) = usage.get("output_tokens").and_then(|v| v.as_u64()) {
+                                    if let Some(output) =
+                                        usage.get("output_tokens").and_then(|v| v.as_u64())
+                                    {
                                         total_output_tokens += output;
                                     }
                                 }
                                 // Count tool uses
                                 for block in message.content.tool_uses() {
                                     tool_use_count += 1;
-                                    if let crate::models::ContentBlock::ToolUse { name, .. } = block {
+                                    if let crate::models::ContentBlock::ToolUse { name, .. } = block
+                                    {
                                         tool_name_set.insert(name.clone());
                                     }
                                 }
@@ -181,10 +197,10 @@ impl ConversationAnalyzer {
                                 }
                             }
                         }
-                        ConversationEvent::Summary { summary, .. } => {
-                            if let Some(s) = summary {
-                                explicit_title = Some(s.clone());
-                            }
+                        ConversationEvent::Summary {
+                            summary: Some(s), ..
+                        } => {
+                            explicit_title = Some(s.clone());
                         }
                         _ => {}
                     }
@@ -193,9 +209,8 @@ impl ConversationAnalyzer {
                     // Fallback: try raw JSON for unrecognized formats
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
                         if is_first_event {
-                            if let Some(lpu) = value
-                                .get("logicalParentUuid")
-                                .and_then(|p| p.as_str())
+                            if let Some(lpu) =
+                                value.get("logicalParentUuid").and_then(|p| p.as_str())
                             {
                                 if !lpu.is_empty() {
                                     parent_uuid = Some(lpu.to_string());
@@ -276,11 +291,31 @@ impl ConversationAnalyzer {
         let mut topics: HashSet<String> = HashSet::new();
 
         let keywords = [
-            "tauri", "rust", "svelte", "typescript", "python",
-            "api", "backend", "frontend", "database", "test",
-            "bug", "fix", "refactor", "feature", "performance",
-            "security", "ui", "ux", "design", "deploy",
-            "error", "issue", "implement", "optimize", "review",
+            "tauri",
+            "rust",
+            "svelte",
+            "typescript",
+            "python",
+            "api",
+            "backend",
+            "frontend",
+            "database",
+            "test",
+            "bug",
+            "fix",
+            "refactor",
+            "feature",
+            "performance",
+            "security",
+            "ui",
+            "ux",
+            "design",
+            "deploy",
+            "error",
+            "issue",
+            "implement",
+            "optimize",
+            "review",
         ];
 
         for msg in messages {
@@ -298,8 +333,15 @@ impl ConversationAnalyzer {
     /// Check if message is generic/unhelpful
     fn is_generic_message(&self, msg: &str) -> bool {
         let generic_patterns = [
-            "proceed", "continue", "ok", "yes", "no",
-            "thanks", "thank you", "/clear", "/status",
+            "proceed",
+            "continue",
+            "ok",
+            "yes",
+            "no",
+            "thanks",
+            "thank you",
+            "/clear",
+            "/status",
         ];
 
         let lower = msg.to_lowercase();
@@ -310,9 +352,7 @@ impl ConversationAnalyzer {
 
     /// Extract first sentence from text
     fn extract_first_sentence(&self, text: &str) -> String {
-        let sentence_end = text
-            .find(|c| c == '.' || c == '?' || c == '!')
-            .unwrap_or(text.len());
+        let sentence_end = text.find(['.', '?', '!']).unwrap_or(text.len());
 
         let limit = sentence_end.min(150);
         let sentence = truncate_at_char_boundary(text, limit);

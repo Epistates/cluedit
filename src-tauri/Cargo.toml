@@ -1,8 +1,13 @@
 [package]
 name = "cluedit"
 version = "0.1.0"
-description = "Claude Code conversation manager"
+description = "CluEdit — Claude Code conversation manager, editor, and training data exporter"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/nickpaterno/cluedit"
+readme = "../README.md"
+keywords = ["claude", "conversation", "llm", "fine-tuning", "tauri"]
+categories = ["development-tools", "text-processing"]
 
 [lib]
 name = "cluedit_lib"

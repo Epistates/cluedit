@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ClaudeEdit",
+  "productName": "CluEdit",
   "version": "0.1.0",
   "identifier": "com.cluedit.app",
   "build": {
@@ -12,13 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "ClaudeEdit",
+        "title": "CluEdit",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
-        "minHeight": 600,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "minHeight": 600
       }
     ],
     "security": {

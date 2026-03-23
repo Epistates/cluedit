@@ -255,7 +255,7 @@ export interface SearchResult {
   total_matches: number;
 }
 
-export type ExportFormat = "Json" | "JsonPretty" | "Markdown" | "Text" | "ChatML" | "ShareGPT" | "Alpaca";
+export type ExportFormat = "Json" | "JsonPretty" | "Markdown" | "Text" | "ChatML" | "ChatMLTools" | "ShareGPT" | "Alpaca";
 
 // Fast search types (Tantivy-based)
 export interface FastSearchResult {
@@ -277,4 +277,34 @@ export interface IndexingProgress {
 export interface IndexStats {
   indexed_conversations: number;
   num_segments: number;
+}
+
+// ============================================================================
+// Backup & Branch Types
+// ============================================================================
+
+export interface BackupInfo {
+  id: string;
+  conversation_id: string;
+  original_file_path: string;
+  backup_file_path: string;
+  label: string;
+  created_at: string;
+  event_count: number;
+  truncated_at_event: number | null;
+  size_bytes: number;
+  auto_backup: boolean;
+}
+
+export interface BranchResult {
+  new_file_path: string;
+  new_conversation_id: string;
+  event_count: number;
+  ids_remapped: number;
+}
+
+export interface ExportAllResult {
+  conversations_exported: number;
+  conversations_skipped: number;
+  output_path: string;
 }

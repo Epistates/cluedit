@@ -1,103 +1,100 @@
-# ClaudeEdit
+# CluEdit
 
-Enterprise-grade Tauri application for managing, searching, and analyzing Claude Code conversation history.
+Desktop application for browsing, searching, backing up, branching, and exporting Claude Code conversations as production-ready LLM training data. Built with [Tauri](https://tauri.app) + [SvelteKit](https://svelte.dev).
 
 ## Features
 
-- **Project Management**: Browse all Claude Code projects and their conversations
-- **Conversation Viewer**: Inspect detailed conversation history with all events
-- **Full-Text Search**: Search across all conversations with regex support
-- **Export Capabilities**: Export conversations to JSON, Markdown, or plain text
-- **Modern UI**: Clean, dark-mode interface with responsive design
-- **Fast Performance**: Built with Rust backend for efficient file operations
+### Conversation Browser
+- Browse all Claude Code projects and conversations from `~/.claude/projects/`
+- Rich metadata: message counts, token usage, cost estimates, tools used, files modified
+- Full-text search powered by [Tantivy](https://github.com/quickwit-oss/tantivy)
+- Filter by date range, sort by modified/created/size
+- Live refresh via filesystem watcher — new conversations appear automatically
 
-## Architecture
+### Conversation Viewer
+- Formatted message display with syntax-highlighted code blocks ([Shiki](https://shiki.style))
+- Expandable tool call details with input/output
+- In-conversation search
+- Stats dashboard with token counts and estimated costs
+- Continuation chain navigation between related conversations
 
-### Backend (Rust)
-- **Models**: Type-safe data structures for conversations, metadata, and search results
-- **ConversationService**: Core service for file system operations, JSONL parsing, and search
-- **Commands**: Tauri IPC commands exposed to frontend
-- **Error Handling**: Comprehensive error types with proper serialization
+### Backup & Branching
+- **Backup** conversations at any point — full or truncated at a specific event
+- **Restore** from any backup with automatic safety backup of current state
+- **Branch** conversations — duplicate with all UUIDs regenerated so Claude treats the branch as independent
+- **Branch from any message** — click "branch here" on any message to fork from that point
+- Branch from backups to create new conversations from saved checkpoints
 
-### Frontend (Svelte + TypeScript)
-- **Components**:
-  - `Sidebar`: Project navigation
-  - `ConversationList`: Conversation browser with sorting
-  - `ConversationDetail`: Full event viewer with export
-  - `SearchView`: Advanced search with context
-  - `Toolbar`: View switching and controls
-- **Stores**: Reactive state management with derived stores
-- **API**: Type-safe wrapper around Tauri commands
+### Training Data Export
+Export conversations in formats ready for LLM fine-tuning:
 
-## Data Location
+| Format | Mode | Description |
+|--------|------|-------------|
+| **ChatML** | Conversational | OpenAI fine-tuning JSONL — text-only exchanges, no tool noise |
+| **ChatML + Tools** | Agentic | Structured `tool_calls` + `role: "tool"` for training tool-calling models |
+| **ShareGPT** | Conversational | `human`/`gpt` turn pairs for open-source fine-tuning frameworks |
+| **Alpaca** | Conversational | Instruction/output pairs for instruction-tuning |
 
-The application reads from `~/.claude/`:
-- `projects/<project>/` - Project-specific conversations (UUID.jsonl files)
-- `history.jsonl` - Main conversation history
-- `file-history/` - File modification history
-- `todos/` - Todo tracking
+Training exports include:
+- Automatic stripping of Claude-specific XML tags and system artifacts
+- Filtering of low-value narration messages
+- Merging consecutive same-role messages for valid alternating format
+- Token-aware chunking — long conversations split into segments under 16k tokens
+- Proper OpenAI function-calling schema with `tools` array for agentic mode
 
-## Development
+Also exports to JSON, Markdown, and plain text.
 
+### Export Scope
+- **Single conversation** — from the conversation viewer
+- **All conversations in a project** — from the toolbar
+- **All projects** — from the sidebar
+
+## Getting Started
+
+### Prerequisites
+- [Rust](https://rustup.rs/) (stable)
+- [Node.js](https://nodejs.org/) 18+
+- [pnpm](https://pnpm.io/)
+
+### Setup
 ```bash
-# Install dependencies
 pnpm install
+pnpm tauri dev
+```
 
-# Run in development mode
-pnpm run tauri dev
+### Build
+```bash
+pnpm tauri build
+```
 
-# Build for production
-pnpm run tauri build
-
-# Check TypeScript/Svelte
-pnpm run check
-
-# Build frontend only
-pnpm run build
+## Project Structure
+```
+src/                          # SvelteKit frontend
+  lib/
+    components/               # Svelte 5 components
+    stores/                   # Svelte stores
+    api.ts                    # Tauri IPC bindings
+    types.ts                  # TypeScript types
+src-tauri/                    # Rust backend
+  src/
+    backup_service.rs         # Backup, restore, branch with ID remapping
+    content_sanitizer.rs      # Training data cleaning, chunking, tool schemas
+    conversation_service.rs   # Core I/O, metadata, export (8 formats)
+    conversation_analyzer.rs  # Metadata extraction from JSONL events
+    search_indexer.rs         # Tantivy full-text search index
+    file_watcher.rs           # Live filesystem monitoring
+    commands.rs               # Tauri IPC command handlers
+    models.rs                 # Shared data types
 ```
 
 ## Tech Stack
 
 - **Framework**: Tauri 2.x
-- **Backend**: Rust (serde, walkdir, regex, chrono)
-- **Frontend**: SvelteKit 2.x + TypeScript
-- **Build**: Vite 6.x
-- **Package Manager**: pnpm
+- **Backend**: Rust (serde, tantivy, regex, tokio, uuid)
+- **Frontend**: SvelteKit 2.x, Svelte 5, TypeScript
+- **Styling**: Tailwind CSS 4, Bits UI, Lucide icons
+- **Code Highlighting**: Shiki
 
-## Usage
+## License
 
-1. Launch the application
-2. Projects load automatically from `~/.claude/projects/`
-3. Select a project to view its conversations
-4. Click a conversation to view full details
-5. Use the Search tab to find specific content across all conversations
-6. Export conversations using the Export button in detail view
-
-## Export Formats
-
-- **JSON (Pretty)**: Formatted JSON with indentation
-- **JSON (Compact)**: Minified JSON
-- **Markdown**: Readable markdown with headers and code blocks
-- **Text**: Plain text with separators
-
-## Development Notes
-
-- All file operations happen in Rust for security and performance
-- JSONL files are parsed line-by-line to handle large conversations
-- Search uses regex for powerful pattern matching
-- UI follows VS Code dark theme conventions
-- Fully type-safe frontend-backend communication
-
-## Future Enhancements
-
-- Tag and categorize conversations
-- Advanced filtering (date ranges, size, event types)
-- Conversation analytics and statistics
-- Import/merge conversations
-- Diff view between conversation snapshots
-- Full-text indexing for faster search
-- Conversation notes and annotations
-
-## Recommended IDE Setup
-
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+MIT
