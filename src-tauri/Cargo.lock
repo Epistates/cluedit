@@ -571,6 +571,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs",
+ "dunce",
  "env_logger",
  "log",
  "notify",

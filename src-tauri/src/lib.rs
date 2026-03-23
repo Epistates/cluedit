@@ -46,8 +46,16 @@ pub fn run() {
 
             std::fs::create_dir_all(&data_dir).expect("Failed to create app data directory");
 
-            let conversation_service = ConversationService::new(&data_dir)
-                .expect("Failed to initialize ConversationService — is ~/.claude/ present?");
+            let claude_dir = dirs::home_dir()
+                .map(|h| h.join(".claude"))
+                .unwrap_or_default();
+            let conversation_service = ConversationService::new(&data_dir).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to initialize ConversationService: {}. Expected Claude data at {}",
+                    e,
+                    claude_dir.display()
+                )
+            });
 
             let backup_service =
                 BackupService::new(&data_dir).expect("Failed to initialize BackupService");

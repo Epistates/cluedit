@@ -34,10 +34,10 @@ pub struct ConversationService {
 impl ConversationService {
     /// Canonicalize `path` and verify it resides within `self.claude_dir`.
     fn validate_path(&self, path: &Path) -> Result<PathBuf> {
-        let canonical = path.canonicalize().map_err(|_| {
+        let canonical = dunce::canonicalize(path).map_err(|_| {
             ClueditError::InvalidPath(format!("Path not found: {}", path.display()))
         })?;
-        let claude_canonical = self.claude_dir.canonicalize().map_err(|_| {
+        let claude_canonical = dunce::canonicalize(&self.claude_dir).map_err(|_| {
             ClueditError::InvalidPath("Claude directory not accessible".to_string())
         })?;
         if !canonical.starts_with(&claude_canonical) {
@@ -1075,12 +1075,12 @@ impl ConversationService {
                 ));
             }
         }
-        let canonical = check.canonicalize().map_err(|_| {
+        let canonical = dunce::canonicalize(&check).map_err(|_| {
             ClueditError::InvalidPath(format!("Cannot resolve path: {}", path.display()))
         })?;
         if !allowed
             .iter()
-            .any(|root| root.canonicalize().is_ok_and(|r| canonical.starts_with(&r)))
+            .any(|root| dunce::canonicalize(root).is_ok_and(|r| canonical.starts_with(&r)))
         {
             return Err(ClueditError::InvalidPath(format!(
                 "Export path {} is not within an allowed directory",

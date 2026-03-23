@@ -111,10 +111,10 @@ impl BackupService {
 
     /// Validate that a path is within the Claude directory
     fn validate_claude_path(&self, path: &Path) -> Result<PathBuf> {
-        let canonical = path.canonicalize().map_err(|_| {
+        let canonical = dunce::canonicalize(path).map_err(|_| {
             ClueditError::InvalidPath(format!("Path not found: {}", path.display()))
         })?;
-        let claude_canonical = self.claude_dir.canonicalize().map_err(|_| {
+        let claude_canonical = dunce::canonicalize(&self.claude_dir).map_err(|_| {
             ClueditError::InvalidPath("Claude directory not accessible".to_string())
         })?;
         if !canonical.starts_with(&claude_canonical) {
@@ -128,10 +128,10 @@ impl BackupService {
 
     /// Validate that a path is within the backups directory
     fn validate_backup_path(&self, path: &Path) -> Result<PathBuf> {
-        let canonical = path.canonicalize().map_err(|_| {
+        let canonical = dunce::canonicalize(path).map_err(|_| {
             ClueditError::InvalidPath(format!("Backup file not found: {}", path.display()))
         })?;
-        let backups_canonical = self.backups_dir.canonicalize().map_err(|_| {
+        let backups_canonical = dunce::canonicalize(&self.backups_dir).map_err(|_| {
             ClueditError::InvalidPath("Backups directory not accessible".to_string())
         })?;
         if !canonical.starts_with(&backups_canonical) {

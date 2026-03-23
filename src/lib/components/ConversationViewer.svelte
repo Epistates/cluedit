@@ -69,9 +69,9 @@
   let backupSuccess = $state<string | null>(null);
 
   /// Derive the project directory path from a conversation's file_path.
-  /// Uses lastIndexOf to safely strip the final path component.
+  /// Cross-platform: strip the final path component (handles both / and \).
   function getProjectPath(filePath: string): string {
-    const lastSlash = filePath.lastIndexOf("/");
+    const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
     return lastSlash > 0 ? filePath.substring(0, lastSlash) : filePath;
   }
 
