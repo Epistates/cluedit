@@ -17,7 +17,7 @@
   import { save } from "@tauri-apps/plugin-dialog";
   import { listen } from "@tauri-apps/api/event";
   import type { IndexingProgress, ExportFormat, ExportAllResult } from "$lib/types";
-  import { FolderOpen, ChevronLeft, ChevronRight, FileDown, Loader2 } from "lucide-svelte";
+  import { FolderOpen, ChevronLeft, ChevronRight, FileDown, Loader2, RefreshCw } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
   import Skeleton from "./Skeleton.svelte";
 
@@ -188,17 +188,30 @@
     {#if !$sidebarCollapsed}
       <h2 class="m-0 text-lg font-semibold text-text-primary">Projects</h2>
     {/if}
-    <button
-      class="p-1 text-text-muted hover:text-text-primary bg-transparent border-none cursor-pointer transition-colors duration-[--transition-fast]"
-      onclick={() => sidebarCollapsed.update((v) => !v)}
-      aria-label="Toggle sidebar"
-    >
-      {#if $sidebarCollapsed}
-        <ChevronRight size={18} />
-      {:else}
-        <ChevronLeft size={18} />
+    <div class="flex items-center gap-1">
+      {#if !$sidebarCollapsed}
+        <button
+          class="p-1 text-text-muted hover:text-text-primary bg-transparent border-none cursor-pointer transition-colors duration-[--transition-fast]"
+          onclick={loadProjects}
+          disabled={loading}
+          aria-label="Refresh projects"
+          title="Rescan for new projects"
+        >
+          <RefreshCw size={15} class={loading ? "animate-spin" : ""} />
+        </button>
       {/if}
-    </button>
+      <button
+        class="p-1 text-text-muted hover:text-text-primary bg-transparent border-none cursor-pointer transition-colors duration-[--transition-fast]"
+        onclick={() => sidebarCollapsed.update((v) => !v)}
+        aria-label="Toggle sidebar"
+      >
+        {#if $sidebarCollapsed}
+          <ChevronRight size={18} />
+        {:else}
+          <ChevronLeft size={18} />
+        {/if}
+      </button>
+    </div>
   </div>
 
   {#if !$sidebarCollapsed}
