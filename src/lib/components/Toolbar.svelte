@@ -30,10 +30,13 @@
     GraduationCap,
     Database,
     BookOpen,
+    Upload,
   } from "lucide-svelte";
+  import PublishDialog from "./PublishDialog.svelte";
 
   let exportingAll = $state(false);
   let exportResult = $state<string | null>(null);
+  let publishOpen = $state(false);
 
   function toggleView(mode: "list" | "search") {
     viewMode.set(mode);
@@ -188,6 +191,10 @@
             <DropdownMenu.Item class={itemClass} onSelect={() => handleExport("Text", false)}>
               <FileType size={14} class="text-text-muted" /> Plain Text
             </DropdownMenu.Item>
+            <DropdownMenu.Separator class="h-px bg-border-default my-1" />
+            <DropdownMenu.Item class={itemClass} onSelect={() => { publishOpen = true; }}>
+              <Upload size={14} class="text-accent-hover" /> Publish to HuggingFace...
+            </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Root>
       {/if}
@@ -251,3 +258,9 @@
     {exportResult}
   </div>
 {/if}
+
+<PublishDialog
+  bind:open={publishOpen}
+  projectPaths={$selectedProject ? [$selectedProject.path] : []}
+  defaultRepoName={$selectedProject ? cleanProjectName($selectedProject.name) + "-training" : "training-data"}
+/>

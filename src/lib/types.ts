@@ -265,6 +265,37 @@ export interface ProviderInfo {
   available: boolean;
 }
 
+// HuggingFace Publish Types
+export interface WhoamiResponse {
+  name: string;
+  fullname: string | null;
+  orgs: { name: string }[];
+}
+
+export interface PublishConfig {
+  repo_name: string;
+  namespace: string | null;
+  private: boolean;
+  license: string;
+  format: ExportFormat;
+  project_paths: string[];
+}
+
+export interface PublishResult {
+  repo_url: string;
+  commit_url: string;
+  files_uploaded: number;
+}
+
+export type PublishProgress =
+  | { step: "ValidatingToken" }
+  | { step: "ExportingData" }
+  | { step: "CreatingRepo" }
+  | { step: "GeneratingCard" }
+  | { step: "Uploading"; current: number; total: number }
+  | { step: "Committing" }
+  | { step: "Done" };
+
 // Fast search types (Tantivy-based)
 export interface FastSearchResult {
   conversation_id: string;

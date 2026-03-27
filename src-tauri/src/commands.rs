@@ -25,6 +25,59 @@ pub fn set_provider(state: State<'_, AppState>, provider: Provider) -> Result<()
 }
 
 // ============================================================================
+// HUGGING FACE PUBLISH COMMANDS
+// ============================================================================
+
+#[tauri::command]
+pub async fn validate_hf_token(token: String) -> Result<crate::hf_publish::WhoamiResponse> {
+    crate::hf_publish::validate_token(&token).await
+}
+
+#[tauri::command]
+pub fn get_hf_token(state: State<'_, AppState>) -> Result<Option<String>> {
+    Ok(crate::hf_publish::read_saved_token(&state.data_dir))
+}
+
+#[tauri::command]
+pub fn save_hf_token(state: State<'_, AppState>, token: String) -> Result<()> {
+    crate::hf_publish::save_token(&state.data_dir, token.trim())
+}
+
+#[tauri::command]
+pub fn delete_hf_token(state: State<'_, AppState>) -> Result<()> {
+    crate::hf_publish::delete_token(&state.data_dir);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn publish_to_huggingface(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+    config: crate::hf_publish::PublishConfig,
+) -> Result<crate::hf_publish::PublishResult> {
+    // Resolve token on backend (never from frontend IPC)
+    let token = crate::hf_publish::read_saved_token(&state.data_dir).ok_or_else(|| {
+        crate::error::ClueditError::HfAuth(
+            "No HuggingFace token found. Please save a token first.".to_string(),
+        )
+    })?;
+
+    // Export data while holding the lock, then release before HTTP calls
+    let (content, exported) = {
+        let svc = state.conversation_service.lock().unwrap();
+        svc.export_all_to_string(config.project_paths.clone(), config.format.clone())?
+    };
+
+    if exported == 0 {
+        return Err(crate::error::ClueditError::Export(
+            "No conversations to publish".to_string(),
+        ));
+    }
+
+    crate::hf_publish::publish_dataset(&config, &token, &content, exported, &app_handle).await
+}
+
+// ============================================================================
 // BACKUP & BRANCH COMMANDS
 // ============================================================================
 

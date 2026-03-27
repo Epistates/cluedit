@@ -1253,6 +1253,84 @@ impl ConversationService {
         Ok(())
     }
 
+    /// Export all conversations to an in-memory string (for HuggingFace publish).
+    /// Returns (content, conversations_exported).
+    pub fn export_all_to_string(
+        &self,
+        project_paths: Vec<String>,
+        format: ExportFormat,
+    ) -> Result<(String, usize)> {
+        let effective_paths = if project_paths.is_empty() {
+            self.list_projects()?
+                .into_iter()
+                .map(|p| p.path.to_string_lossy().to_string())
+                .collect()
+        } else {
+            project_paths
+        };
+
+        let mut conversation_paths: Vec<PathBuf> = Vec::new();
+        for project_path in &effective_paths {
+            let raw_path = PathBuf::from(project_path);
+            let path = match self.validate_path(&raw_path) {
+                Ok(p) => p,
+                Err(_) => {
+                    // For Codex, scan sessions directly
+                    if self.provider == Provider::Codex {
+                        if let Some(ref codex_dir) = self.codex_dir {
+                            let sessions =
+                                crate::codex::codex_sessions_for_project(codex_dir, project_path);
+                            conversation_paths.extend(sessions);
+                        }
+                        continue;
+                    }
+                    continue;
+                }
+            };
+            for entry in WalkDir::new(&path)
+                .max_depth(1)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                if entry.path().extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                    conversation_paths.push(entry.path().to_path_buf());
+                }
+            }
+        }
+
+        let mut output = String::new();
+        let mut exported = 0usize;
+
+        for conv_path in &conversation_paths {
+            let file_path_str = conv_path.to_string_lossy().to_string();
+            match self.read_conversation(&file_path_str) {
+                Ok(conversation) => {
+                    if conversation.metadata.total_message_count == 0 {
+                        continue;
+                    }
+                    let result = match format {
+                        ExportFormat::ChatML => self.export_to_chatml(&conversation),
+                        ExportFormat::ChatMLTools => self.export_to_chatml_tools(&conversation),
+                        ExportFormat::ShareGPT => self.export_to_sharegpt(&conversation),
+                        ExportFormat::Alpaca => self.export_to_alpaca(&conversation),
+                        _ => continue,
+                    };
+                    if let Ok(content) = result {
+                        let trimmed = content.trim();
+                        if !trimmed.is_empty() {
+                            output.push_str(trimmed);
+                            output.push('\n');
+                            exported += 1;
+                        }
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+
+        Ok((output, exported))
+    }
+
     /// Export all conversations in the given projects to a single output file or directory.
     ///
     /// Training formats (ChatML, Alpaca, ShareGPT): concatenated into one file at `output_path`.

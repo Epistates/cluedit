@@ -20,6 +20,15 @@ pub enum ClueditError {
     #[error("Export error: {0}")]
     Export(String),
 
+    #[error("HuggingFace auth error: {0}")]
+    HfAuth(String),
+
+    #[error("HuggingFace API error: {0}")]
+    HfApi(String),
+
+    #[error("HTTP error: {0}")]
+    Reqwest(#[from] reqwest::Error),
+
     #[error("Search index error: {0}")]
     TantivyError(#[from] tantivy::TantivyError),
 

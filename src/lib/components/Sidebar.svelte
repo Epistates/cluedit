@@ -19,7 +19,8 @@
   import { save } from "@tauri-apps/plugin-dialog";
   import { listen } from "@tauri-apps/api/event";
   import type { IndexingProgress, ExportFormat, ExportAllResult, Provider } from "$lib/types";
-  import { FolderOpen, ChevronLeft, ChevronRight, FileDown, Loader2, RefreshCw } from "lucide-svelte";
+  import { FolderOpen, ChevronLeft, ChevronRight, FileDown, Loader2, RefreshCw, Upload } from "lucide-svelte";
+  import PublishDialog from "./PublishDialog.svelte";
   import { DropdownMenu } from "bits-ui";
   import Skeleton from "./Skeleton.svelte";
 
@@ -29,6 +30,7 @@
   let filterQuery = $state("");
   let exportingAll = $state(false);
   let exportMsg = $state<string | null>(null);
+  let publishOpen = $state(false);
 
   async function handleExportAllProjects(format: ExportFormat) {
     if (exportingAll) return;
@@ -294,6 +296,10 @@
           <DropdownMenu.Item class={itemClass} onSelect={() => handleExportAllProjects("Alpaca")}>
             Alpaca
           </DropdownMenu.Item>
+          <div class="h-px bg-border-default my-1"></div>
+          <DropdownMenu.Item class={itemClass} onSelect={() => { publishOpen = true; }}>
+            <Upload size={14} class="text-accent-hover" /> Publish to HuggingFace...
+          </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Root>
 
@@ -361,3 +367,5 @@
     </ul>
   {/if}
 </aside>
+
+<PublishDialog bind:open={publishOpen} projectPaths={[]} defaultRepoName="all-projects-training" />

@@ -50,7 +50,9 @@
     Copy,
     Scissors,
     Loader2,
+    Upload,
   } from "lucide-svelte";
+  import PublishDialog from "./PublishDialog.svelte";
 
   let searchQuery = $state("");
   let conversation = $derived($selectedConversation);
@@ -228,6 +230,7 @@
   }
 
   let exportSuccess = $state<string | null>(null);
+  let publishOpen = $state(false);
 
   function cleanProjectName(raw: string): string {
     const segments = raw.split("-").filter(Boolean);
@@ -400,6 +403,14 @@
             >
               <BookOpen size={14} class="text-text-muted" />
               Alpaca (Instruction)
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator class="h-px bg-border-default my-1" />
+            <DropdownMenu.Item
+              class="flex items-center gap-2 w-full px-3 py-2 text-left text-[13px] text-text-secondary cursor-pointer bg-transparent border-none hover:bg-bg-overlay hover:text-text-primary transition-colors duration-[--transition-fast]"
+              onSelect={() => { publishOpen = true; }}
+            >
+              <Upload size={14} class="text-accent-hover" />
+              Publish to HuggingFace...
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Root>
@@ -725,3 +736,11 @@
     </div>
   {/if}
 </div>
+
+{#if conversation}
+  <PublishDialog
+    bind:open={publishOpen}
+    projectPaths={conversation.metadata.project ? [getProjectPath(conversation.metadata.file_path)] : []}
+    defaultRepoName={cleanProjectName(conversation.metadata.project || "export") + "-training"}
+  />
+{/if}

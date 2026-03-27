@@ -6,6 +6,7 @@ mod conversation_analyzer;
 mod conversation_service;
 mod error;
 mod file_watcher;
+mod hf_publish;
 mod models;
 mod search_indexer;
 mod title_cache;
@@ -106,6 +107,12 @@ pub fn run() {
             // Provider commands
             commands::list_providers,
             commands::set_provider,
+            // HuggingFace publish
+            commands::validate_hf_token,
+            commands::get_hf_token,
+            commands::save_hf_token,
+            commands::delete_hf_token,
+            commands::publish_to_huggingface,
             // Backup & branch
             commands::create_backup,
             commands::create_backup_at_event,

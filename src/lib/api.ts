@@ -12,6 +12,9 @@ import type {
   ExportAllResult,
   Provider,
   ProviderInfo,
+  WhoamiResponse,
+  PublishConfig,
+  PublishResult,
 } from "./types";
 
 export async function listProviders(): Promise<ProviderInfo[]> {
@@ -181,4 +184,28 @@ export async function exportAllConversations(
   outputPath: string
 ): Promise<ExportAllResult> {
   return invoke("export_all_conversations", { projectPaths, format, outputPath });
+}
+
+// ============================================================================
+// HUGGING FACE PUBLISH API
+// ============================================================================
+
+export async function validateHfToken(token: string): Promise<WhoamiResponse> {
+  return invoke("validate_hf_token", { token });
+}
+
+export async function getHfToken(): Promise<string | null> {
+  return invoke("get_hf_token");
+}
+
+export async function saveHfToken(token: string): Promise<void> {
+  return invoke("save_hf_token", { token });
+}
+
+export async function deleteHfToken(): Promise<void> {
+  return invoke("delete_hf_token");
+}
+
+export async function publishToHuggingface(config: PublishConfig): Promise<PublishResult> {
+  return invoke("publish_to_huggingface", { config });
 }

@@ -131,7 +131,6 @@
           bind:value={query}
           placeholder="Search in conversation..."
           class="w-full bg-bg-overlay border border-border-strong pl-10 pr-4 py-3 rounded-md text-text-secondary text-sm font-inherit focus:outline-none focus:border-accent-hover"
-          autofocus
         />
       </div>
     </div>
