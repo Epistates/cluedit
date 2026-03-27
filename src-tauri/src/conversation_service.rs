@@ -731,13 +731,104 @@ impl ConversationService {
 
         output.push_str("## Conversation\n\n");
         for event in &conversation.events {
-            if let Some(text) = event.message_text() {
-                let role = event.role().unwrap_or("unknown");
-                let role_label = if role == "user" { "User" } else { "Assistant" };
-                output.push_str(&format!("### {}\n\n", role_label));
-                output.push_str(&text);
-                output.push_str("\n\n---\n\n");
+            // Skip meta events and non-chat events
+            let is_meta = match event {
+                ConversationEvent::User { is_meta, .. } => *is_meta,
+                ConversationEvent::Assistant { is_meta, .. } => *is_meta,
+                _ => true,
+            };
+            if is_meta {
+                continue;
             }
+
+            let role = match event.role() {
+                Some(r) => r,
+                None => continue,
+            };
+
+            // Get text content
+            let text = event.message_text().unwrap_or_default();
+            let text = text.trim();
+
+            // Get tool calls for this event
+            let tool_summary = match event {
+                ConversationEvent::Assistant { message, .. } => match &message.content {
+                    MessageContent::Blocks(blocks) => {
+                        let tools: Vec<String> = blocks
+                            .iter()
+                            .filter_map(|b| match b {
+                                ContentBlock::ToolUse { name, input, .. } => {
+                                    let detail = match name.as_str() {
+                                        "Bash" => input
+                                            .get("command")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| format!("`$ {}`", &s[..s.len().min(80)]))
+                                            .unwrap_or_default(),
+                                        "Read" | "Write" | "Edit" => input
+                                            .get("file_path")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| format!("`{}`", s))
+                                            .unwrap_or_default(),
+                                        "Grep" | "Glob" => input
+                                            .get("pattern")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| format!("`{}`", s))
+                                            .unwrap_or_default(),
+                                        _ => String::new(),
+                                    };
+                                    Some(format!("**{}** {}", name, detail))
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                        if tools.is_empty() {
+                            String::new()
+                        } else {
+                            tools.join(" | ")
+                        }
+                    }
+                    _ => String::new(),
+                },
+                _ => String::new(),
+            };
+
+            // Skip if no text and no tool calls
+            if text.is_empty() && tool_summary.is_empty() {
+                continue;
+            }
+
+            // Skip task-notification user messages
+            if role == "user" && text.starts_with("<task-notification>") {
+                continue;
+            }
+
+            // Skip tool-result-only user messages
+            let is_tool_result_only = match event {
+                ConversationEvent::User { message, .. } => match &message.content {
+                    MessageContent::Blocks(blocks) => {
+                        !blocks.is_empty()
+                            && blocks
+                                .iter()
+                                .all(|b| matches!(b, ContentBlock::ToolResult { .. }))
+                    }
+                    _ => false,
+                },
+                _ => false,
+            };
+            if is_tool_result_only {
+                continue;
+            }
+
+            let role_label = if role == "user" { "User" } else { "Assistant" };
+            output.push_str(&format!("### {}\n\n", role_label));
+            if !tool_summary.is_empty() {
+                output.push_str(&format!("> {}\n\n", tool_summary));
+            }
+            if !text.is_empty() {
+                output.push_str(text);
+                output.push('\n');
+            }
+            output.push_str("\n---\n\n");
         }
 
         Ok(output)
@@ -819,15 +910,25 @@ impl ConversationService {
         output.push_str("\n\n");
 
         for event in &conversation.events {
-            if let Some(text) = event.message_text() {
-                let role = event.role().unwrap_or("unknown");
-                let role_label = if role == "user" { "User" } else { "Assistant" };
-                output.push_str(&format!("[{}]\n", role_label));
-                output.push_str(&text);
-                output.push_str("\n\n");
-                output.push_str(&"-".repeat(80));
-                output.push_str("\n\n");
+            if !event.is_chat_message() {
+                continue;
             }
+            let text = event.message_text().unwrap_or_default();
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            // Skip task notifications and tool-result-only
+            if text.starts_with("<task-notification>") {
+                continue;
+            }
+            let role = event.role().unwrap_or("unknown");
+            let role_label = if role == "user" { "User" } else { "Assistant" };
+            output.push_str(&format!("[{}]\n", role_label));
+            output.push_str(text);
+            output.push_str("\n\n");
+            output.push_str(&"-".repeat(80));
+            output.push_str("\n\n");
         }
 
         Ok(output)
@@ -1034,8 +1135,10 @@ impl ConversationService {
 
         for event in &conversation.events {
             match event {
-                ConversationEvent::User { message, .. } => {
-                    // Handle both text and tool_result blocks from user events.
+                ConversationEvent::User {
+                    message, is_meta, ..
+                } if !is_meta => {
+                    // Handle both text and tool_result blocks from non-meta user events.
                     // Tool results appear in non-meta user events in Claude Code JSONL.
                     let mut has_text = false;
                     let mut text_parts: Vec<String> = Vec::new();
@@ -1389,7 +1492,17 @@ impl ConversationService {
             let raw_path = PathBuf::from(project_path);
             let path = match self.validate_path(&raw_path) {
                 Ok(p) => p,
-                Err(_) => continue,
+                Err(_) => {
+                    // Codex: project paths are workspace CWDs, scan sessions directly
+                    if self.provider == Provider::Codex {
+                        if let Some(ref codex_dir) = self.codex_dir {
+                            let sessions =
+                                crate::codex::codex_sessions_for_project(codex_dir, project_path);
+                            conversation_paths.extend(sessions);
+                        }
+                    }
+                    continue;
+                }
             };
             for entry in WalkDir::new(&path)
                 .max_depth(1)

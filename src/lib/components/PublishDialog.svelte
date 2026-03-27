@@ -9,7 +9,7 @@
 
   let {
     open = $bindable(false),
-    format = "ChatML" as ExportFormat,
+    format = "ChatMLTools" as ExportFormat,
     projectPaths = [] as string[],
     defaultRepoName = "training-data",
   }: {
@@ -31,7 +31,7 @@
   let repoName = $state("");
   let namespace = $state("");
   let isPrivate = $state(false);
-  let selectedFormat = $state<ExportFormat>("ChatML");
+  let selectedFormat = $state<ExportFormat>("ChatMLTools");
   let license = $state("mit");
 
   // Redaction
@@ -231,6 +231,15 @@
             <p class="text-sm text-text-secondary m-0">
               Signed in as <strong>{username}</strong>
             </p>
+            <div class="px-3 py-2 rounded-md bg-bg-elevated text-xs text-text-muted">
+              {#if projectPaths.length === 0}
+                Scope: <strong class="text-text-secondary">All projects</strong> (all providers)
+              {:else if projectPaths.length === 1}
+                Scope: <strong class="text-text-secondary">{projectPaths[0].split("/").pop() || projectPaths[0].split("\\").pop()}</strong> (1 project)
+              {:else}
+                Scope: <strong class="text-text-secondary">{projectPaths.length} projects</strong>
+              {/if}
+            </div>
 
             <div>
               <label class={labelClass} for="repo-name">Repository Name</label>
@@ -256,8 +265,8 @@
             <div>
               <label class={labelClass} for="format-select">Format</label>
               <select id="format-select" bind:value={selectedFormat} class={inputClass}>
-                <option value="ChatML">ChatML (OpenAI)</option>
-                <option value="ChatMLTools">ChatML + Tools</option>
+                <option value="ChatMLTools">ChatML + Tools (recommended)</option>
+                <option value="ChatML">ChatML (text only, no tools)</option>
                 <option value="ShareGPT">ShareGPT</option>
                 <option value="Alpaca">Alpaca</option>
               </select>
