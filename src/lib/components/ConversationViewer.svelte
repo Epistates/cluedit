@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { selectedConversation, viewMode as globalViewMode, conversations } from "$lib/stores";
+  import { selectedConversation, viewMode as globalViewMode, conversations, osUsername } from "$lib/stores";
   import ConversationView from "./ConversationView.svelte";
   import JsonView from "./JsonView.svelte";
   import SearchView from "./ConversationSearchView.svelte";
@@ -233,14 +233,22 @@
   let publishOpen = $state(false);
 
   function cleanProjectName(raw: string): string {
-    const segments = raw.split("-").filter(Boolean);
+    const segments = raw.replace(/^-+/, "").split("-").filter(Boolean);
     if (segments.length === 0) return raw;
     const last = segments[segments.length - 1];
     const generic = ["work", "src", "dev", "home", "Users", "tmp", "var"];
+    let name: string;
     if (segments.length >= 2 && generic.includes(last)) {
-      return segments.slice(-2).join("-");
+      name = segments.slice(-2).join("-");
+    } else {
+      name = last;
     }
-    return last;
+    // Strip OS username if it matches the project name
+    const user = $osUsername;
+    if (user && user.length >= 4 && name === user) {
+      return "project";
+    }
+    return name;
   }
 
   async function handleExport(format: ExportFormat) {

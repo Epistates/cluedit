@@ -161,6 +161,11 @@ async fn send_with_retry(
 // Token persistence + validation
 // ============================================================================
 
+/// Get the OS username (for redaction in repo names, filenames, etc.)
+pub fn os_username() -> Option<String> {
+    dirs::home_dir().and_then(|h| h.file_name().and_then(|n| n.to_str()).map(String::from))
+}
+
 /// Validate token format (must start with "hf_").
 fn validate_token_format(token: &str) -> Result<()> {
     let trimmed = token.trim();
@@ -563,7 +568,7 @@ dataset_info:
 
 # {repo_name}
 
-LLM fine-tuning training data exported from AI coding assistant conversations by [CluEdit](https://github.com/nickpaterno/cluedit).
+LLM fine-tuning training data exported from AI coding assistant conversations by [CluEdit](https://github.com/Epistates/cluedit).
 
 ## Dataset Details
 

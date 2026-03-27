@@ -2,7 +2,7 @@
   import { Dialog } from "bits-ui";
   import { listen } from "@tauri-apps/api/event";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { validateHfToken, getHfToken, saveHfToken, publishToHuggingface } from "$lib/api";
+  import { validateHfToken, getHfToken, saveHfToken, publishToHuggingface, getOsUsername } from "$lib/api";
   import type { ExportFormat, PublishConfig, PublishResult, PublishProgress, WhoamiResponse, RedactConfig } from "$lib/types";
   import { setLoading, setMessage, setError, clearStatus } from "$lib/stores/statusStore";
   import { Upload, ExternalLink, Check, Loader2, AlertCircle, KeyRound } from "lucide-svelte";
@@ -39,6 +39,7 @@
   let redactHomePaths = $state(true);
   let redactEmails = $state(false);
   let redactIpAddresses = $state(false);
+  let redactPathIds = $state(true);
 
   // Progress
   let progressStep = $state("");
@@ -48,24 +49,34 @@
   let result = $state<PublishResult | null>(null);
   let errorMsg = $state<string | null>(null);
 
-  /** Sanitize a string into a valid HF repo name */
+  let osUser = $state<string | null>(null);
+
+  /** Sanitize a string into a valid HF repo name, stripping the OS username */
   function toRepoName(s: string): string {
-    return s
+    let result = s;
+    // Strip OS username from repo name
+    if (osUser && osUser.length >= 4) {
+      result = result.replaceAll(osUser, "user");
+    }
+    return result
       .toLowerCase()
-      .replace(/[^a-z0-9._-]/g, "-")  // replace invalid chars with hyphens
-      .replace(/-{2,}/g, "-")          // collapse multiple hyphens
-      .replace(/\.{2,}/g, ".")         // collapse multiple dots
-      .replace(/^[.\-]+/, "")          // strip leading dots/hyphens
-      .replace(/[.\-]+$/, "")          // strip trailing dots/hyphens
+      .replace(/[^a-z0-9._-]/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/\.{2,}/g, ".")
+      .replace(/^[.\-]+/, "")
+      .replace(/[.\-]+$/, "")
       .slice(0, 96) || "training-data";
   }
 
-  // When dialog opens, check for saved token
+  // When dialog opens, fetch OS username and check for saved token
   $effect(() => {
     if (open) {
-      repoName = toRepoName(defaultRepoName);
-      selectedFormat = format;
-      checkSavedToken();
+      (async () => {
+        osUser = await getOsUsername();
+        repoName = toRepoName(defaultRepoName);
+        selectedFormat = format;
+        checkSavedToken();
+      })();
     }
   });
 
@@ -140,6 +151,7 @@
           redact_home_paths: redactHomePaths,
           redact_emails: redactEmails,
           redact_ip_addresses: redactIpAddresses,
+          redact_path_ids: redactPathIds,
           custom_rules: [],
         },
       };
@@ -303,6 +315,10 @@
                 <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
                   <input type="checkbox" bind:checked={redactEmails} class="accent-accent-hover" />
                   Redact email addresses
+                </label>
+                <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                  <input type="checkbox" bind:checked={redactPathIds} class="accent-accent-hover" />
+                  Hash IDs in file paths
                 </label>
                 <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
                   <input type="checkbox" bind:checked={redactIpAddresses} class="accent-accent-hover" />

@@ -190,6 +190,10 @@ export async function exportAllConversations(
 // HUGGING FACE PUBLISH API
 // ============================================================================
 
+export async function getOsUsername(): Promise<string | null> {
+  return invoke("get_os_username");
+}
+
 export async function validateHfToken(token: string): Promise<WhoamiResponse> {
   return invoke("validate_hf_token", { token });
 }

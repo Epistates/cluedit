@@ -667,6 +667,16 @@ fn re_ip_addresses() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap())
 }
 
+/// Long hex strings in file paths (hashes, snapshot IDs, etc.)
+fn re_path_hashes() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        // Matches /abcdef0123456789... (16+ hex chars after a path separator)
+        // Also matches UUIDs in paths: /xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        Regex::new(r"(?P<sep>[/\\])(?P<hash>[a-f0-9]{16,}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})").unwrap()
+    })
+}
+
 /// Redact sensitive content from text based on the provided config.
 /// Applied as a final pass after `sanitize_for_training()`.
 pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
@@ -707,6 +717,12 @@ pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
                 for (from, to) in &replacements {
                     result = result.replace(from, to);
                 }
+
+                // Also replace bare username (e.g., in ls output: "nickpaterno  staff")
+                // Only if username is 4+ chars to avoid false positives
+                if username.len() >= 4 {
+                    result = result.replace(username, "user");
+                }
             }
         }
     }
@@ -720,6 +736,26 @@ pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
     if config.redact_ip_addresses {
         result = re_ip_addresses()
             .replace_all(&result, "<ip-address>")
+            .to_string();
+    }
+
+    // Path hashes/UUIDs — replace with short deterministic hash
+    if config.redact_path_ids {
+        use sha2::{Digest, Sha256};
+        result = re_path_hashes()
+            .replace_all(&result, |caps: &regex::Captures| {
+                let sep = &caps["sep"];
+                let original = &caps["hash"];
+                // Deterministic 8-char hash so identical IDs map to same value
+                let mut hasher = Sha256::new();
+                hasher.update(original.as_bytes());
+                let digest = hasher.finalize();
+                let short = format!(
+                    "{:02x}{:02x}{:02x}{:02x}",
+                    digest[0], digest[1], digest[2], digest[3]
+                );
+                format!("{}{}", sep, short)
+            })
             .to_string();
     }
 

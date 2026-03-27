@@ -9,13 +9,14 @@
     selectedConversation,
     activeProvider,
     availableProviders,
+    osUsername,
   } from "$lib/stores";
   import {
     setLoading,
     setError,
     setMessage,
   } from "$lib/stores/statusStore";
-  import { listProjects, listConversations, startIndexing, exportAllConversations, listProviders, setProvider } from "$lib/api";
+  import { listProjects, listConversations, startIndexing, exportAllConversations, listProviders, setProvider, getOsUsername } from "$lib/api";
   import { save } from "@tauri-apps/plugin-dialog";
   import { listen } from "@tauri-apps/api/event";
   import type { IndexingProgress, ExportFormat, ExportAllResult, Provider } from "$lib/types";
@@ -90,6 +91,11 @@
   }
 
   onMount(async () => {
+    // Load OS username for redaction
+    try {
+      osUsername.set(await getOsUsername());
+    } catch { /* ignore */ }
+
     // Detect available providers
     try {
       const providers = await listProviders();

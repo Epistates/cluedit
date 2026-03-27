@@ -108,6 +108,7 @@ pub fn run() {
             commands::list_providers,
             commands::set_provider,
             // HuggingFace publish
+            commands::get_os_username,
             commands::validate_hf_token,
             commands::get_hf_token,
             commands::save_hf_token,

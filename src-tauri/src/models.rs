@@ -460,6 +460,8 @@ pub struct RedactConfig {
     pub redact_emails: bool,
     #[serde(default)]
     pub redact_ip_addresses: bool,
+    #[serde(default = "default_true")]
+    pub redact_path_ids: bool,
     #[serde(default)]
     pub custom_rules: Vec<RedactRule>,
 }
@@ -475,6 +477,7 @@ impl Default for RedactConfig {
             redact_home_paths: true,
             redact_emails: false,
             redact_ip_addresses: false,
+            redact_path_ids: true,
             custom_rules: Vec::new(),
         }
     }

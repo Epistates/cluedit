@@ -348,6 +348,7 @@ export interface RedactConfig {
   redact_home_paths: boolean;
   redact_emails: boolean;
   redact_ip_addresses: boolean;
+  redact_path_ids: boolean;
   custom_rules: RedactRule[];
 }
 

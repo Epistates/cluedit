@@ -7,6 +7,9 @@ import type {
   Provider,
 } from "./types";
 
+// OS username (for redaction in filenames)
+export const osUsername = writable<string | null>(null);
+
 // Provider store
 export const activeProvider = writable<Provider>("Claude");
 export const availableProviders = writable<Provider[]>(["Claude"]);

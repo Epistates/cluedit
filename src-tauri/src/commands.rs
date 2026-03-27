@@ -39,6 +39,11 @@ pub fn get_hf_token(state: State<'_, AppState>) -> Result<Option<String>> {
 }
 
 #[tauri::command]
+pub fn get_os_username() -> Option<String> {
+    crate::hf_publish::os_username()
+}
+
+#[tauri::command]
 pub fn save_hf_token(state: State<'_, AppState>, token: String) -> Result<()> {
     crate::hf_publish::save_token(&state.data_dir, token.trim())
 }

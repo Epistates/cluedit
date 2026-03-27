@@ -7,6 +7,7 @@
     dateFilterFrom,
     dateFilterTo,
     selectedProject,
+    osUsername,
   } from "$lib/stores";
   import { exportAllConversations } from "$lib/api";
   import { save, open } from "@tauri-apps/plugin-dialog";
@@ -46,14 +47,21 @@
 
   /** Clean up Claude project directory names for display/filenames */
   function cleanProjectName(raw: string): string {
-    const segments = raw.split("-").filter(Boolean);
+    const segments = raw.replace(/^-+/, "").split("-").filter(Boolean);
     if (segments.length === 0) return raw;
     const last = segments[segments.length - 1];
     const generic = ["work", "src", "dev", "home", "Users", "tmp", "var"];
+    let name: string;
     if (segments.length >= 2 && generic.includes(last)) {
-      return segments.slice(-2).join("-");
+      name = segments.slice(-2).join("-");
+    } else {
+      name = last;
     }
-    return last;
+    const user = $osUsername;
+    if (user && user.length >= 4 && name === user) {
+      return "project";
+    }
+    return name;
   }
 
   async function handleExport(format: ExportFormat, allProjects: boolean) {

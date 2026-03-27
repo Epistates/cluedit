@@ -333,43 +333,92 @@ impl ConversationService {
             .map(|s| s.to_string());
 
         // Quick counts without full JSON parsing
-        let (event_count, total_message_count_quick) = fs::File::open(file_path)
+        let (event_count, total_message_count_quick, first_user_msg) = fs::File::open(file_path)
             .map(|file| {
                 let reader = BufReader::new(file);
                 let mut events = 0;
                 let mut messages = 0;
+                let mut first_user_msg: Option<String> = None;
 
                 for line in reader.lines() {
                     events += 1;
                     if let Ok(line) = line {
-                        // Claude events
-                        let is_claude_msg = (line.contains("\"type\":\"user\"")
-                            || line.contains("\"type\":\"assistant\""))
-                            && !line.contains("\"isMeta\":true");
+                        // Claude user events
+                        let is_claude_user =
+                            line.contains("\"type\":\"user\"") && !line.contains("\"isMeta\":true");
+                        let is_claude_msg = is_claude_user
+                            || (line.contains("\"type\":\"assistant\"")
+                                && !line.contains("\"isMeta\":true"));
                         // Codex events
-                        let is_codex_msg = line.contains("\"type\":\"user_message\"")
+                        let is_codex_user = line.contains("\"type\":\"user_message\"");
+                        let is_codex_msg = is_codex_user
                             || (line.contains("\"type\":\"message\"")
                                 && line.contains("\"role\":\"assistant\""));
                         if is_claude_msg || is_codex_msg {
                             messages += 1;
                         }
+                        // Extract first user message for title
+                        if first_user_msg.is_none() && (is_claude_user || is_codex_user) {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                                let text = if is_codex_user {
+                                    // Codex: payload.message
+                                    v.get("payload")
+                                        .and_then(|p| p.get("message"))
+                                        .and_then(|m| m.as_str())
+                                        .map(String::from)
+                                } else {
+                                    // Claude: message.content (string or blocks)
+                                    let msg = v.get("message").and_then(|m| m.get("content"));
+                                    match msg {
+                                        Some(serde_json::Value::String(s)) => Some(s.clone()),
+                                        Some(serde_json::Value::Array(blocks)) => blocks
+                                            .iter()
+                                            .find(|b| {
+                                                b.get("type").and_then(|t| t.as_str())
+                                                    == Some("text")
+                                            })
+                                            .and_then(|b| b.get("text").and_then(|t| t.as_str()))
+                                            .map(String::from),
+                                        _ => None,
+                                    }
+                                };
+                                if let Some(t) = text {
+                                    let t = t.trim().to_string();
+                                    if !t.is_empty() && !t.starts_with('<') {
+                                        first_user_msg = Some(if t.len() > 120 {
+                                            format!(
+                                                "{}...",
+                                                &t[..t
+                                                    .char_indices()
+                                                    .take(120)
+                                                    .last()
+                                                    .map(|(i, c)| i + c.len_utf8())
+                                                    .unwrap_or(t.len())]
+                                            )
+                                        } else {
+                                            t
+                                        });
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                (events, messages)
+                (events, messages, first_user_msg)
             })
-            .unwrap_or((0, 0));
+            .unwrap_or((0, 0, None));
 
-        // Check title cache
+        // Check title cache, fall back to first user message
         let (title, summary) = if let Ok(mtime) = metadata.modified() {
             let title_cache = self.title_cache.lock().unwrap();
             if let Some(cached) = title_cache.get(&id, mtime) {
                 (cached.title, cached.summary)
             } else {
-                (None, None)
+                (first_user_msg.clone(), None)
             }
         } else {
-            (None, None)
+            (first_user_msg.clone(), None)
         };
 
         Ok(ConversationMetadata {
@@ -381,7 +430,7 @@ impl ConversationService {
             modified,
             event_count,
             project,
-            first_message: None,
+            first_message: first_user_msg,
             title,
             summary,
             user_message_count: 0,
