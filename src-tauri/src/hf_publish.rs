@@ -88,6 +88,8 @@ struct CreateRepoRequest {
     repo_type: String,
     private: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    organization: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     license: Option<String>,
 }
 
@@ -410,9 +412,10 @@ async fn create_repo(
             .post(format!("{}/api/repos/create", HF_BASE_URL))
             .bearer_auth(token)
             .json(&CreateRepoRequest {
-                name: format!("{}/{}", namespace, name),
+                name: name.to_string(),
                 repo_type: "dataset".to_string(),
                 private,
+                organization: Some(namespace.to_string()),
                 license: Some(license.to_string()),
             })
     })

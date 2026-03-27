@@ -48,10 +48,22 @@
   let result = $state<PublishResult | null>(null);
   let errorMsg = $state<string | null>(null);
 
+  /** Sanitize a string into a valid HF repo name */
+  function toRepoName(s: string): string {
+    return s
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]/g, "-")  // replace invalid chars with hyphens
+      .replace(/-{2,}/g, "-")          // collapse multiple hyphens
+      .replace(/\.{2,}/g, ".")         // collapse multiple dots
+      .replace(/^[.\-]+/, "")          // strip leading dots/hyphens
+      .replace(/[.\-]+$/, "")          // strip trailing dots/hyphens
+      .slice(0, 96) || "training-data";
+  }
+
   // When dialog opens, check for saved token
   $effect(() => {
     if (open) {
-      repoName = defaultRepoName;
+      repoName = toRepoName(defaultRepoName);
       selectedFormat = format;
       checkSavedToken();
     }
