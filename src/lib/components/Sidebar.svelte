@@ -73,9 +73,14 @@
   async function switchProvider(provider: Provider) {
     if (provider === $activeProvider) return;
     try {
+      // Clear all state before switching to avoid stale data races
+      selectedConversation.set(null);
+      conversations.set([]);
+      selectedProject.set(null);
+      projects.set([]);
+
       await setProvider(provider);
       activeProvider.set(provider);
-      selectedConversation.set(null);
       await loadProjects();
     } catch (e) {
       console.error("Failed to switch provider:", e);
