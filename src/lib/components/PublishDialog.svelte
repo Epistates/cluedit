@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { validateHfToken, getHfToken, saveHfToken, publishToHuggingface } from "$lib/api";
-  import type { ExportFormat, PublishConfig, PublishResult, PublishProgress, WhoamiResponse } from "$lib/types";
+  import type { ExportFormat, PublishConfig, PublishResult, PublishProgress, WhoamiResponse, RedactConfig } from "$lib/types";
   import { setLoading, setMessage, setError, clearStatus } from "$lib/stores/statusStore";
   import { Upload, ExternalLink, Check, Loader2, AlertCircle, KeyRound } from "lucide-svelte";
 
@@ -33,6 +33,12 @@
   let isPrivate = $state(false);
   let selectedFormat = $state<ExportFormat>("ChatML");
   let license = $state("mit");
+
+  // Redaction
+  let redactApiKeys = $state(true);
+  let redactHomePaths = $state(true);
+  let redactEmails = $state(false);
+  let redactIpAddresses = $state(false);
 
   // Progress
   let progressStep = $state("");
@@ -117,6 +123,13 @@
         license,
         format: selectedFormat,
         project_paths: projectPaths,
+        redact_config: {
+          redact_api_keys: redactApiKeys,
+          redact_home_paths: redactHomePaths,
+          redact_emails: redactEmails,
+          redact_ip_addresses: redactIpAddresses,
+          custom_rules: [],
+        },
       };
 
       result = await publishToHuggingface(config);
@@ -252,6 +265,29 @@
             <div class="flex items-center gap-2">
               <input id="private-toggle" type="checkbox" bind:checked={isPrivate} class="accent-accent-hover" />
               <label for="private-toggle" class="text-sm text-text-secondary cursor-pointer">Private repository</label>
+            </div>
+
+            <!-- Sanitization -->
+            <div class="pt-2 border-t border-border-default">
+              <div class={labelClass}>Sanitization</div>
+              <div class="space-y-1.5 mt-1">
+                <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                  <input type="checkbox" bind:checked={redactApiKeys} class="accent-accent-hover" />
+                  Redact API keys & secrets
+                </label>
+                <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                  <input type="checkbox" bind:checked={redactHomePaths} class="accent-accent-hover" />
+                  Replace home directory paths
+                </label>
+                <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                  <input type="checkbox" bind:checked={redactEmails} class="accent-accent-hover" />
+                  Redact email addresses
+                </label>
+                <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                  <input type="checkbox" bind:checked={redactIpAddresses} class="accent-accent-hover" />
+                  Redact IP addresses
+                </label>
+              </div>
             </div>
 
             <button class={btnPrimary} onclick={handlePublish} disabled={!repoName.trim()}>

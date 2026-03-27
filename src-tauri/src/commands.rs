@@ -63,10 +63,17 @@ pub async fn publish_to_huggingface(
     })?;
 
     // Export data while holding the lock, then release before HTTP calls
-    let (content, exported) = {
+    // Apply redaction if configured
+    let redact = config.redact_config.as_ref();
+    let (mut content, exported) = {
         let svc = state.conversation_service.lock().unwrap();
         svc.export_all_to_string(config.project_paths.clone(), config.format.clone())?
     };
+
+    // Apply redaction to the exported content
+    if let Some(rc) = redact {
+        content = crate::content_sanitizer::redact_sensitive(&content, rc);
+    }
 
     if exported == 0 {
         return Err(crate::error::ClueditError::Export(

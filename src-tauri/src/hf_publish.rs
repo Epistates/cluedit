@@ -7,7 +7,7 @@
 //! - Retry logic with Retry-After header support for rate limiting
 
 use crate::error::{ClueditError, Result};
-use crate::models::ExportFormat;
+use crate::models::{ExportFormat, RedactConfig};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Duration;
@@ -54,6 +54,7 @@ pub struct PublishConfig {
     pub license: String,
     pub format: ExportFormat,
     pub project_paths: Vec<String>,
+    pub redact_config: Option<RedactConfig>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -642,6 +642,106 @@ fn tool_schema(name: &str) -> Option<serde_json::Value> {
     Some(schema)
 }
 
+// ============================================================================
+// Sensitive data redaction
+// ============================================================================
+
+use crate::models::RedactConfig;
+
+// Cached regex patterns for secret detection
+fn re_api_keys() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        // Known provider token prefixes + generic key=value patterns
+        Regex::new(r"(?:sk-[a-zA-Z0-9]{20,}|hf_[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|ghu_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36}|AKIA[0-9A-Z]{16}|xoxb-[a-zA-Z0-9\-]{20,}|xoxp-[a-zA-Z0-9\-]{20,}|AIza[0-9A-Za-z_\-]{35}|(?i:api[_\-]?key|secret[_\-]?key|access[_\-]?token|auth[_\-]?token)\s*[:=]\s*\S{16,})").unwrap()
+    })
+}
+
+fn re_emails() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap())
+}
+
+fn re_ip_addresses() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap())
+}
+
+/// Redact sensitive content from text based on the provided config.
+/// Applied as a final pass after `sanitize_for_training()`.
+pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
+    let mut result = text.to_string();
+
+    // API keys and secrets
+    if config.redact_api_keys {
+        result = re_api_keys()
+            .replace_all(&result, "<redacted-key>")
+            .to_string();
+    }
+
+    // Home directory paths
+    if config.redact_home_paths {
+        if let Some(home) = dirs::home_dir() {
+            let home_str = home.to_string_lossy();
+            // Get username from home path
+            if let Some(username) = home.file_name().and_then(|n| n.to_str()) {
+                // Replace /Users/nick/ with /Users/user/ (macOS)
+                // Replace /home/nick/ with /home/user/ (Linux)
+                // Replace C:\Users\nick\ with C:\Users\user\ (Windows)
+                let replacements = [
+                    (format!("/Users/{}/", username), "/Users/user/".to_string()),
+                    (format!("/Users/{}", username), "/Users/user".to_string()),
+                    (format!("/home/{}/", username), "/home/user/".to_string()),
+                    (format!("/home/{}", username), "/home/user".to_string()),
+                    (
+                        format!("\\Users\\{}\\", username),
+                        "\\Users\\user\\".to_string(),
+                    ),
+                    (
+                        format!("\\Users\\{}", username),
+                        "\\Users\\user".to_string(),
+                    ),
+                    // Also replace the full home path directly
+                    (home_str.to_string(), "/Users/user".to_string()),
+                ];
+                for (from, to) in &replacements {
+                    result = result.replace(from, to);
+                }
+            }
+        }
+    }
+
+    // Emails
+    if config.redact_emails {
+        result = re_emails().replace_all(&result, "<email>").to_string();
+    }
+
+    // IP addresses
+    if config.redact_ip_addresses {
+        result = re_ip_addresses()
+            .replace_all(&result, "<ip-address>")
+            .to_string();
+    }
+
+    // Custom rules
+    for rule in &config.custom_rules {
+        if rule.pattern.is_empty() {
+            continue;
+        }
+        if rule.is_regex {
+            if let Ok(re) = Regex::new(&rule.pattern) {
+                result = re
+                    .replace_all(&result, rule.replacement.as_str())
+                    .to_string();
+            }
+        } else {
+            result = result.replace(&rule.pattern, &rule.replacement);
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -766,5 +866,64 @@ mod tests {
         ));
         assert!(!is_low_value_assistant("The function `parse_config` takes a path parameter and returns a Config struct. Here's how it works:"));
         assert!(!is_low_value_assistant("```rust\nfn main() {}\n```"));
+    }
+
+    #[test]
+    fn test_redact_api_keys() {
+        let config = RedactConfig {
+            redact_api_keys: true,
+            ..Default::default()
+        };
+        assert!(
+            redact_sensitive("token: sk-abcdefghij1234567890abcd", &config)
+                .contains("<redacted-key>")
+        );
+        assert!(
+            redact_sensitive("key: ghp_abcdefghijklmnopqrstuvwxyz1234567890", &config)
+                .contains("<redacted-key>")
+        );
+        assert!(redact_sensitive("AKIAIOSFODNN7EXAMPLE", &config).contains("<redacted-key>"));
+        // Normal text unchanged
+        assert_eq!(redact_sensitive("hello world", &config), "hello world");
+    }
+
+    #[test]
+    fn test_redact_emails() {
+        let config = RedactConfig {
+            redact_emails: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            redact_sensitive("contact user@example.com for help", &config),
+            "contact <email> for help"
+        );
+    }
+
+    #[test]
+    fn test_redact_ip_addresses() {
+        let config = RedactConfig {
+            redact_ip_addresses: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            redact_sensitive("server at 192.168.1.100 port 8080", &config),
+            "server at <ip-address> port 8080"
+        );
+    }
+
+    #[test]
+    fn test_redact_custom_rules() {
+        let config = RedactConfig {
+            custom_rules: vec![crate::models::RedactRule {
+                pattern: "mycompany.internal".to_string(),
+                replacement: "example.com".to_string(),
+                is_regex: false,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            redact_sensitive("connect to mycompany.internal", &config),
+            "connect to example.com"
+        );
     }
 }

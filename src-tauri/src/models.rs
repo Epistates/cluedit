@@ -449,6 +449,45 @@ fn default_provider() -> Provider {
     Provider::Claude
 }
 
+/// Redaction configuration for training data export
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RedactConfig {
+    #[serde(default = "default_true")]
+    pub redact_api_keys: bool,
+    #[serde(default = "default_true")]
+    pub redact_home_paths: bool,
+    #[serde(default)]
+    pub redact_emails: bool,
+    #[serde(default)]
+    pub redact_ip_addresses: bool,
+    #[serde(default)]
+    pub custom_rules: Vec<RedactRule>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for RedactConfig {
+    fn default() -> Self {
+        Self {
+            redact_api_keys: true,
+            redact_home_paths: true,
+            redact_emails: false,
+            redact_ip_addresses: false,
+            custom_rules: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RedactRule {
+    pub pattern: String,
+    pub replacement: String,
+    #[serde(default)]
+    pub is_regex: bool,
+}
+
 /// Export format options
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExportFormat {

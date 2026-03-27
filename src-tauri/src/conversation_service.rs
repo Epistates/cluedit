@@ -680,10 +680,18 @@ impl ConversationService {
         })
     }
 
-    /// Export conversation to different format
+    /// Export conversation to different format, with optional redaction.
     pub fn export_conversation(&self, file_path: &str, format: ExportFormat) -> Result<String> {
-        // validate_path is called inside read_conversation, but we validate
-        // eagerly here so the error surface is at the right layer.
+        self.export_conversation_with_redaction(file_path, format, None)
+    }
+
+    /// Export conversation with optional sensitive data redaction.
+    pub fn export_conversation_with_redaction(
+        &self,
+        file_path: &str,
+        format: ExportFormat,
+        redact: Option<&RedactConfig>,
+    ) -> Result<String> {
         let raw_path = PathBuf::from(file_path);
         self.validate_path(&raw_path)?;
         let conversation = self.read_conversation(file_path)?;
@@ -693,9 +701,9 @@ impl ConversationService {
             ExportFormat::JsonPretty => Ok(serde_json::to_string_pretty(&conversation)?),
             ExportFormat::Markdown => self.export_to_markdown(&conversation),
             ExportFormat::Text => self.export_to_text(&conversation),
-            ExportFormat::ChatML => self.export_to_chatml(&conversation),
-            ExportFormat::ShareGPT => self.export_to_sharegpt(&conversation),
-            ExportFormat::Alpaca => self.export_to_alpaca(&conversation),
+            ExportFormat::ChatML => self.export_to_chatml(&conversation, redact),
+            ExportFormat::ShareGPT => self.export_to_sharegpt(&conversation, redact),
+            ExportFormat::Alpaca => self.export_to_alpaca(&conversation, redact),
             ExportFormat::ChatMLTools => self.export_to_chatml_tools(&conversation),
         }
     }
@@ -831,7 +839,10 @@ impl ConversationService {
 
     /// Collect text-only, sanitized, merged turns for conversational training.
     /// Strips ALL tool_use/tool_result blocks — keeps only human-readable text.
-    fn collect_conversational_turns(conversation: &Conversation) -> Vec<Turn> {
+    fn collect_conversational_turns(
+        conversation: &Conversation,
+        redact: Option<&RedactConfig>,
+    ) -> Vec<Turn> {
         let mut raw_turns: Vec<Turn> = Vec::new();
 
         for event in &conversation.events {
@@ -840,9 +851,14 @@ impl ConversationService {
                     continue;
                 }
 
-                let clean = sanitize_for_training(&content);
+                let mut clean = sanitize_for_training(&content);
                 if clean.is_empty() {
                     continue;
+                }
+
+                // Apply redaction if configured
+                if let Some(config) = redact {
+                    clean = content_sanitizer::redact_sensitive(&clean, config);
                 }
 
                 if role == "assistant" && content_sanitizer::is_low_value_assistant(&clean) {
@@ -884,8 +900,12 @@ impl ConversationService {
     /// Export as OpenAI ChatML fine-tuning format (conversational mode).
     /// Text-only exchanges, no tool noise. Long conversations chunked into
     /// multiple JSONL lines each under the token budget.
-    fn export_to_chatml(&self, conversation: &Conversation) -> Result<String> {
-        let turns = Self::collect_conversational_turns(conversation);
+    fn export_to_chatml(
+        &self,
+        conversation: &Conversation,
+        redact: Option<&RedactConfig>,
+    ) -> Result<String> {
+        let turns = Self::collect_conversational_turns(conversation, redact);
         if !turns.iter().any(|t| t.role == "user") || !turns.iter().any(|t| t.role == "assistant") {
             return Ok(String::new());
         }
@@ -929,8 +949,12 @@ impl ConversationService {
     }
 
     /// Export as ShareGPT format (conversational mode, text-only).
-    fn export_to_sharegpt(&self, conversation: &Conversation) -> Result<String> {
-        let turns = Self::collect_conversational_turns(conversation);
+    fn export_to_sharegpt(
+        &self,
+        conversation: &Conversation,
+        redact: Option<&RedactConfig>,
+    ) -> Result<String> {
+        let turns = Self::collect_conversational_turns(conversation, redact);
         if !turns.iter().any(|t| t.role == "user") || !turns.iter().any(|t| t.role == "assistant") {
             return Ok(String::new());
         }
@@ -951,8 +975,12 @@ impl ConversationService {
     }
 
     /// Export as Alpaca instruction-tuning format (conversational, text-only).
-    fn export_to_alpaca(&self, conversation: &Conversation) -> Result<String> {
-        let turns = Self::collect_conversational_turns(conversation);
+    fn export_to_alpaca(
+        &self,
+        conversation: &Conversation,
+        redact: Option<&RedactConfig>,
+    ) -> Result<String> {
+        let turns = Self::collect_conversational_turns(conversation, redact);
         let mut examples = Vec::new();
 
         let mut i = 0;
@@ -1309,10 +1337,10 @@ impl ConversationService {
                         continue;
                     }
                     let result = match format {
-                        ExportFormat::ChatML => self.export_to_chatml(&conversation),
+                        ExportFormat::ChatML => self.export_to_chatml(&conversation, None),
                         ExportFormat::ChatMLTools => self.export_to_chatml_tools(&conversation),
-                        ExportFormat::ShareGPT => self.export_to_sharegpt(&conversation),
-                        ExportFormat::Alpaca => self.export_to_alpaca(&conversation),
+                        ExportFormat::ShareGPT => self.export_to_sharegpt(&conversation, None),
+                        ExportFormat::Alpaca => self.export_to_alpaca(&conversation, None),
                         _ => continue,
                     };
                     if let Ok(content) = result {
@@ -1407,7 +1435,7 @@ impl ConversationService {
                                 skipped += 1;
                                 continue;
                             }
-                            match self.export_to_sharegpt(&conversation) {
+                            match self.export_to_sharegpt(&conversation, None) {
                                 Ok(json_str) => {
                                     if let Ok(val) =
                                         serde_json::from_str::<serde_json::Value>(&json_str)
@@ -1438,11 +1466,11 @@ impl ConversationService {
                                 continue;
                             }
                             let result = match format {
-                                ExportFormat::ChatML => self.export_to_chatml(&conversation),
+                                ExportFormat::ChatML => self.export_to_chatml(&conversation, None),
                                 ExportFormat::ChatMLTools => {
                                     self.export_to_chatml_tools(&conversation)
                                 }
-                                ExportFormat::Alpaca => self.export_to_alpaca(&conversation),
+                                ExportFormat::Alpaca => self.export_to_alpaca(&conversation, None),
                                 _ => unreachable!(),
                             };
                             match result {

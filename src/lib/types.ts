@@ -324,6 +324,7 @@ export interface PublishConfig {
   license: string;
   format: ExportFormat;
   project_paths: string[];
+  redact_config: RedactConfig | null;
 }
 
 export interface PublishResult {
@@ -340,6 +341,21 @@ export type PublishProgress =
   | { step: "Uploading"; current: number; total: number }
   | { step: "Committing" }
   | { step: "Done" };
+
+// Redaction config for training data export
+export interface RedactConfig {
+  redact_api_keys: boolean;
+  redact_home_paths: boolean;
+  redact_emails: boolean;
+  redact_ip_addresses: boolean;
+  custom_rules: RedactRule[];
+}
+
+export interface RedactRule {
+  pattern: string;
+  replacement: string;
+  is_regex: boolean;
+}
 
 // Fast search types (Tantivy-based)
 export interface FastSearchResult {
