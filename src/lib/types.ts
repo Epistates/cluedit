@@ -175,10 +175,55 @@ export function isAssistantEvent(
   return event.type === "assistant";
 }
 
+/** Regex matching Claude task-notification blocks (background agent completions) */
+const TASK_NOTIFICATION_RE = /^\s*<task-notification>[\s\S]*?<\/task-notification>/;
+
 export function isChatMessage(event: ConversationEvent): boolean {
-  return (
-    (isUserEvent(event) || isAssistantEvent(event)) && !event.isMeta
+  if (!(isUserEvent(event) || isAssistantEvent(event)) || event.isMeta) {
+    return false;
+  }
+  if (isUserEvent(event)) {
+    // User events that contain ONLY tool_result blocks are tool outputs, not real user messages
+    if (isToolResultOnly(event.message.content)) {
+      return false;
+    }
+    // User events that are task notifications (background agent completions)
+    const text = extractText(event.message.content);
+    if (TASK_NOTIFICATION_RE.test(text.trim())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Check if content consists entirely of tool_result blocks (no text) */
+export function isToolResultOnly(content: MessageContent): boolean {
+  if (typeof content === "string") return false;
+  if (content.length === 0) return false;
+  return content.every((b) => b.type === "tool_result");
+}
+
+/** Extract tool_result content blocks from a message */
+export function getToolResults(
+  content: MessageContent
+): ContentBlockToolResult[] {
+  if (typeof content === "string") return [];
+  return content.filter(
+    (b): b is ContentBlockToolResult => b.type === "tool_result"
   );
+}
+
+/** Extract the text content from a tool_result block */
+export function extractToolResultText(result: ContentBlockToolResult): string {
+  if (!result.content) return "";
+  if (typeof result.content === "string") return result.content;
+  if (Array.isArray(result.content)) {
+    return (result.content as { type?: string; text?: string }[])
+      .filter((c) => c.text)
+      .map((c) => c.text!)
+      .join("\n");
+  }
+  return "";
 }
 
 export function extractText(content: MessageContent): string {

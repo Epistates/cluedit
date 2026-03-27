@@ -34,7 +34,7 @@ fn re_task_notification_only() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r"(?s)^\s*<task-notification>.*?</task-notification>\s*(Full transcript[^\n]*)?\s*$",
+            r"(?s)^\s*<task-notification>.*?</task-notification>\s*((?:Full transcript|Read the output file)[^\n]*)?\s*$",
         )
         .unwrap()
     })
@@ -51,6 +51,7 @@ fn re_claude_tags() -> &'static Regex {
             r"system-reminder|new-diagnostics|",
             r"available-deferred-tools|",
             r"task-notification|task-id|tool-use-id|output-file|",
+            r"status|summary|result|usage|total_tokens|duration_ms|tool_uses|",
             r"antml_thinking|thinking|",
             r"function_calls|antml_invoke|antml_parameter|",
             r"fast_mode_info|",
@@ -61,6 +62,7 @@ fn re_claude_tags() -> &'static Regex {
             r"system-reminder|new-diagnostics|",
             r"available-deferred-tools|",
             r"task-notification|task-id|tool-use-id|output-file|",
+            r"status|summary|result|usage|total_tokens|duration_ms|tool_uses|",
             r"antml_thinking|thinking|",
             r"function_calls|antml_invoke|antml_parameter|",
             r"fast_mode_info|",
