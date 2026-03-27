@@ -6,10 +6,28 @@ use std::path::PathBuf;
 use tauri::{Emitter, State};
 
 // ============================================================================
+// PROVIDER COMMANDS
+// ============================================================================
+
+/// List available providers (Claude, Codex, etc.)
+#[tauri::command]
+pub fn list_providers(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>> {
+    let svc = state.conversation_service.lock().unwrap();
+    Ok(svc.available_providers())
+}
+
+/// Switch the active provider
+#[tauri::command]
+pub fn set_provider(state: State<'_, AppState>, provider: Provider) -> Result<()> {
+    let mut svc = state.conversation_service.lock().unwrap();
+    svc.set_provider(provider);
+    Ok(())
+}
+
+// ============================================================================
 // BACKUP & BRANCH COMMANDS
 // ============================================================================
 
-/// Create a full backup of a conversation
 #[tauri::command]
 pub fn create_backup(
     state: State<'_, AppState>,
@@ -19,7 +37,6 @@ pub fn create_backup(
     state.backup_service.create_backup(&file_path, &label)
 }
 
-/// Create a backup truncated at a specific event index (0-based, inclusive)
 #[tauri::command]
 pub fn create_backup_at_event(
     state: State<'_, AppState>,
@@ -32,7 +49,6 @@ pub fn create_backup_at_event(
         .create_backup_at_event(&file_path, event_index, &label)
 }
 
-/// List all backups for a specific conversation
 #[tauri::command]
 pub fn list_backups(
     state: State<'_, AppState>,
@@ -41,21 +57,16 @@ pub fn list_backups(
     state.backup_service.list_backups(&conversation_id)
 }
 
-/// List all backups across all conversations
 #[tauri::command]
 pub fn list_all_backups(state: State<'_, AppState>) -> Result<Vec<BackupInfo>> {
     state.backup_service.list_all_backups()
 }
 
-/// Restore a conversation from a backup.
-/// Returns the safety backup that was automatically created before restoring.
 #[tauri::command]
 pub fn restore_backup(state: State<'_, AppState>, backup_id: String) -> Result<BackupInfo> {
     state.backup_service.restore_backup(&backup_id)
 }
 
-/// Branch a conversation: duplicate with all IDs regenerated.
-/// Optionally truncate at a specific event index.
 #[tauri::command]
 pub fn branch_conversation(
     state: State<'_, AppState>,
@@ -67,40 +78,46 @@ pub fn branch_conversation(
         .branch_conversation(&source_path, truncate_at_event)
 }
 
-/// Branch from a backup: create a new conversation from a backup with regenerated IDs.
 #[tauri::command]
 pub fn branch_from_backup(state: State<'_, AppState>, backup_id: String) -> Result<BranchResult> {
     state.backup_service.branch_from_backup(&backup_id)
 }
 
-/// Delete a backup and its file
 #[tauri::command]
 pub fn delete_backup(state: State<'_, AppState>, backup_id: String) -> Result<()> {
     state.backup_service.delete_backup(&backup_id)
 }
 
-/// List all Claude projects
+// ============================================================================
+// CONVERSATION COMMANDS
+// ============================================================================
+
 #[tauri::command]
 pub fn list_projects(state: State<'_, AppState>) -> Result<Vec<ProjectInfo>> {
-    state.conversation_service.list_projects()
+    state.conversation_service.lock().unwrap().list_projects()
 }
 
-/// List conversations in a specific project
 #[tauri::command]
 pub fn list_conversations(
     state: State<'_, AppState>,
     project_path: String,
 ) -> Result<Vec<ConversationMetadata>> {
-    state.conversation_service.list_conversations(&project_path)
+    state
+        .conversation_service
+        .lock()
+        .unwrap()
+        .list_conversations(&project_path)
 }
 
-/// Read a full conversation
 #[tauri::command]
 pub fn read_conversation(state: State<'_, AppState>, file_path: String) -> Result<Conversation> {
-    state.conversation_service.read_conversation(&file_path)
+    state
+        .conversation_service
+        .lock()
+        .unwrap()
+        .read_conversation(&file_path)
 }
 
-/// Search across conversations
 #[tauri::command]
 pub fn search_conversations(
     state: State<'_, AppState>,
@@ -109,15 +126,18 @@ pub fn search_conversations(
     case_sensitive: bool,
     use_regex: Option<bool>,
 ) -> Result<Vec<SearchResult>> {
-    state.conversation_service.search_conversations(
-        &query,
-        project_paths,
-        case_sensitive,
-        use_regex.unwrap_or(false),
-    )
+    state
+        .conversation_service
+        .lock()
+        .unwrap()
+        .search_conversations(
+            &query,
+            project_paths,
+            case_sensitive,
+            use_regex.unwrap_or(false),
+        )
 }
 
-/// Export conversation to a specific format
 #[tauri::command]
 pub fn export_conversation(
     state: State<'_, AppState>,
@@ -126,10 +146,11 @@ pub fn export_conversation(
 ) -> Result<String> {
     state
         .conversation_service
+        .lock()
+        .unwrap()
         .export_conversation(&file_path, format)
 }
 
-/// Export a single conversation directly to a file (bypasses frontend FS scope).
 #[tauri::command]
 pub fn export_conversation_to_file(
     state: State<'_, AppState>,
@@ -139,11 +160,11 @@ pub fn export_conversation_to_file(
 ) -> Result<()> {
     state
         .conversation_service
+        .lock()
+        .unwrap()
         .export_conversation_to_file(&file_path, format, &output_path)
 }
 
-/// Export all conversations in the given projects to a file or directory.
-/// Pass empty project_paths to export ALL projects.
 #[tauri::command]
 pub fn export_all_conversations(
     state: State<'_, AppState>,
@@ -153,20 +174,24 @@ pub fn export_all_conversations(
 ) -> Result<ExportAllResult> {
     state
         .conversation_service
+        .lock()
+        .unwrap()
         .export_all_conversations(project_paths, format, &output_path)
 }
 
-/// Get metadata for a single conversation without loading all events
 #[tauri::command]
 pub fn get_conversation_metadata(
     state: State<'_, AppState>,
     file_path: String,
 ) -> Result<ConversationMetadata> {
     let path = std::path::PathBuf::from(file_path);
-    state.conversation_service.get_conversation_metadata(&path)
+    state
+        .conversation_service
+        .lock()
+        .unwrap()
+        .get_conversation_metadata(&path)
 }
 
-/// Find the parent conversation file by UUID
 #[tauri::command]
 pub fn find_parent_conversation(
     state: State<'_, AppState>,
@@ -174,6 +199,8 @@ pub fn find_parent_conversation(
 ) -> Result<Option<String>> {
     state
         .conversation_service
+        .lock()
+        .unwrap()
         .find_conversation_by_uuid(&parent_uuid)
 }
 
@@ -181,8 +208,6 @@ pub fn find_parent_conversation(
 // FAST SEARCH COMMANDS (Tantivy-based)
 // ============================================================================
 
-/// Start background indexing of all conversations.
-/// Emits "indexing-progress" events to the frontend.
 #[tauri::command]
 pub async fn start_indexing(
     app_handle: tauri::AppHandle,
@@ -203,7 +228,6 @@ pub async fn start_indexing(
     };
 
     let paths: Vec<PathBuf> = project_paths.iter().map(PathBuf::from).collect();
-
     let progress_handle = app_handle.clone();
 
     tokio::spawn(async move {
@@ -227,7 +251,6 @@ pub async fn start_indexing(
     Ok(())
 }
 
-/// Fast search using Tantivy full-text index
 #[tauri::command]
 pub async fn fast_search(
     state: State<'_, AppState>,
@@ -254,7 +277,6 @@ pub async fn fast_search(
     Ok(results)
 }
 
-/// Get search index statistics
 #[tauri::command]
 pub async fn get_index_stats(
     state: State<'_, AppState>,

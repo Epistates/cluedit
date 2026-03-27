@@ -4,7 +4,12 @@ import type {
   ConversationMetadata,
   Conversation,
   SearchResult,
+  Provider,
 } from "./types";
+
+// Provider store
+export const activeProvider = writable<Provider>("Claude");
+export const availableProviders = writable<Provider[]>(["Claude"]);
 
 // Projects store
 export const projects = writable<ProjectInfo[]>([]);

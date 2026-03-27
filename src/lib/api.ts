@@ -10,7 +10,17 @@ import type {
   BackupInfo,
   BranchResult,
   ExportAllResult,
+  Provider,
+  ProviderInfo,
 } from "./types";
+
+export async function listProviders(): Promise<ProviderInfo[]> {
+  return invoke("list_providers");
+}
+
+export async function setProvider(provider: Provider): Promise<void> {
+  return invoke("set_provider", { provider });
+}
 
 export async function listProjects(): Promise<ProjectInfo[]> {
   return invoke("list_projects");

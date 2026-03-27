@@ -420,12 +420,33 @@ pub struct SearchMatch {
     pub context_after: Vec<String>,
 }
 
+/// Conversation data provider
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Provider {
+    Claude,
+    Codex,
+}
+
+/// Provider availability info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderInfo {
+    pub name: String,
+    pub provider: Provider,
+    pub available: bool,
+}
+
 /// Project directory information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectInfo {
     pub name: String,
     pub path: PathBuf,
     pub conversation_count: usize,
+    #[serde(default = "default_provider")]
+    pub provider: Provider,
+}
+
+fn default_provider() -> Provider {
+    Provider::Claude
 }
 
 /// Export format options

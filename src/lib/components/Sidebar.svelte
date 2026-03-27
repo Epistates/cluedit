@@ -7,16 +7,18 @@
     sidebarCollapsed,
     viewMode,
     selectedConversation,
+    activeProvider,
+    availableProviders,
   } from "$lib/stores";
   import {
     setLoading,
     setError,
     setMessage,
   } from "$lib/stores/statusStore";
-  import { listProjects, listConversations, startIndexing, exportAllConversations } from "$lib/api";
+  import { listProjects, listConversations, startIndexing, exportAllConversations, listProviders, setProvider } from "$lib/api";
   import { save } from "@tauri-apps/plugin-dialog";
   import { listen } from "@tauri-apps/api/event";
-  import type { IndexingProgress, ExportFormat, ExportAllResult } from "$lib/types";
+  import type { IndexingProgress, ExportFormat, ExportAllResult, Provider } from "$lib/types";
   import { FolderOpen, ChevronLeft, ChevronRight, FileDown, Loader2, RefreshCw } from "lucide-svelte";
   import { DropdownMenu } from "bits-ui";
   import Skeleton from "./Skeleton.svelte";
@@ -68,7 +70,31 @@
       : $projects
   );
 
+  async function switchProvider(provider: Provider) {
+    if (provider === $activeProvider) return;
+    try {
+      await setProvider(provider);
+      activeProvider.set(provider);
+      selectedConversation.set(null);
+      await loadProjects();
+    } catch (e) {
+      console.error("Failed to switch provider:", e);
+    }
+  }
+
   onMount(async () => {
+    // Detect available providers
+    try {
+      const providers = await listProviders();
+      const available = providers.filter(p => p.available).map(p => p.provider);
+      if (available.length > 0) {
+        availableProviders.set(available);
+        activeProvider.set(available[0]);
+      }
+    } catch (e) {
+      console.error("Failed to list providers:", e);
+    }
+
     await loadProjects();
 
     const unlistenProgress = await listen<IndexingProgress>(
@@ -186,7 +212,24 @@
 >
   <div class="flex items-center justify-between p-4 border-b border-border-default">
     {#if !$sidebarCollapsed}
-      <h2 class="m-0 text-lg font-semibold text-text-primary">Projects</h2>
+      <div class="flex items-center gap-2">
+        {#if $availableProviders.length > 1}
+          <div class="flex gap-0.5 bg-bg-surface rounded-md p-0.5">
+            {#each $availableProviders as p}
+              <button
+                class="px-2.5 py-0.5 text-xs rounded cursor-pointer border-none transition-colors duration-[--transition-fast]"
+                class:bg-accent={$activeProvider === p}
+                class:text-text-primary={$activeProvider === p}
+                class:bg-transparent={$activeProvider !== p}
+                class:text-text-muted={$activeProvider !== p}
+                onclick={() => switchProvider(p)}
+              >{p}</button>
+            {/each}
+          </div>
+        {:else}
+          <h2 class="m-0 text-lg font-semibold text-text-primary">Projects</h2>
+        {/if}
+      </div>
     {/if}
     <div class="flex items-center gap-1">
       {#if !$sidebarCollapsed}

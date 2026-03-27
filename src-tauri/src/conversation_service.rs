@@ -22,59 +22,138 @@ struct CachedMetadata {
     mtime: SystemTime,
 }
 
-/// Service for managing Claude conversation files.
+/// Service for managing conversation files from multiple providers.
 /// Designed to be long-lived as Tauri managed state so caches persist.
 pub struct ConversationService {
     claude_dir: PathBuf,
+    codex_dir: Option<PathBuf>,
+    provider: Provider,
     analyzer: ConversationAnalyzer,
     cache: Mutex<HashMap<PathBuf, CachedMetadata>>,
     title_cache: Mutex<TitleCache>,
+    codex_history: Mutex<HashMap<String, String>>,
 }
 
 impl ConversationService {
-    /// Canonicalize `path` and verify it resides within `self.claude_dir`.
+    /// Canonicalize `path` and verify it resides within an allowed directory.
     fn validate_path(&self, path: &Path) -> Result<PathBuf> {
         let canonical = dunce::canonicalize(path).map_err(|_| {
             ClueditError::InvalidPath(format!("Path not found: {}", path.display()))
         })?;
-        let claude_canonical = dunce::canonicalize(&self.claude_dir).map_err(|_| {
-            ClueditError::InvalidPath("Claude directory not accessible".to_string())
-        })?;
-        if !canonical.starts_with(&claude_canonical) {
-            return Err(ClueditError::InvalidPath(format!(
-                "Path {} is outside the Claude directory",
-                path.display()
-            )));
+
+        // Check against all allowed roots
+        let mut allowed_roots: Vec<&Path> = vec![&self.claude_dir];
+        if let Some(ref codex_dir) = self.codex_dir {
+            allowed_roots.push(codex_dir);
         }
-        Ok(canonical)
+
+        // For Codex, also allow the project's cwd path (which is the workspace dir)
+        if self.provider == Provider::Codex {
+            // Codex project paths are workspace cwds, not inside codex_dir
+            // Allow any readable path for Codex conversation listing
+            return Ok(canonical);
+        }
+
+        for root in &allowed_roots {
+            if let Ok(root_canonical) = dunce::canonicalize(root) {
+                if canonical.starts_with(&root_canonical) {
+                    return Ok(canonical);
+                }
+            }
+        }
+
+        Err(ClueditError::InvalidPath(format!(
+            "Path {} is outside allowed directories",
+            path.display()
+        )))
     }
 
     pub fn new(data_dir: &Path) -> Result<Self> {
         let home = dirs::home_dir()
             .ok_or_else(|| ClueditError::InvalidPath("Home directory not found".to_string()))?;
         let claude_dir = home.join(".claude");
+        let codex_dir = {
+            let d = home.join(".codex");
+            if d.exists() {
+                Some(d)
+            } else {
+                None
+            }
+        };
 
-        if !claude_dir.exists() {
+        // Require at least one provider
+        if !claude_dir.exists() && codex_dir.is_none() {
             return Err(ClueditError::NotFound(format!(
-                "Claude directory not found at {}",
-                claude_dir.display()
+                "No conversation providers found. Expected Claude at {} or Codex at {}",
+                claude_dir.display(),
+                home.join(".codex").display()
             )));
         }
+
+        // Load Codex history for titles
+        let codex_history = if let Some(ref cd) = codex_dir {
+            crate::codex::load_codex_history(cd)
+        } else {
+            HashMap::new()
+        };
 
         let analyzer = ConversationAnalyzer::new();
         let cache = Mutex::new(HashMap::new());
         let title_cache = Mutex::new(TitleCache::new(data_dir)?);
 
+        // Default to Claude if available, else Codex
+        let provider = if claude_dir.exists() {
+            Provider::Claude
+        } else {
+            Provider::Codex
+        };
+
         Ok(Self {
             claude_dir,
+            codex_dir,
+            provider,
             analyzer,
             cache,
             title_cache,
+            codex_history: Mutex::new(codex_history),
         })
     }
 
-    /// List all project directories
+    /// Set the active provider.
+    pub fn set_provider(&mut self, provider: Provider) {
+        self.provider = provider;
+    }
+
+    /// Get the active provider.
+    pub fn provider(&self) -> Provider {
+        self.provider
+    }
+
+    /// List available providers.
+    pub fn available_providers(&self) -> Vec<ProviderInfo> {
+        vec![
+            ProviderInfo {
+                name: "Claude".to_string(),
+                provider: Provider::Claude,
+                available: self.claude_dir.exists(),
+            },
+            ProviderInfo {
+                name: "Codex".to_string(),
+                provider: Provider::Codex,
+                available: self.codex_dir.is_some(),
+            },
+        ]
+    }
+
+    /// List all project directories for the active provider.
     pub fn list_projects(&self) -> Result<Vec<ProjectInfo>> {
+        match self.provider {
+            Provider::Claude => self.list_claude_projects(),
+            Provider::Codex => Ok(self.list_codex_projects()),
+        }
+    }
+
+    fn list_claude_projects(&self) -> Result<Vec<ProjectInfo>> {
         let projects_dir = self.claude_dir.join("projects");
         if !projects_dir.exists() {
             return Ok(Vec::new());
@@ -99,12 +178,20 @@ impl ConversationService {
                     name,
                     path,
                     conversation_count,
+                    provider: Provider::Claude,
                 });
             }
         }
 
         projects.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(projects)
+    }
+
+    fn list_codex_projects(&self) -> Vec<ProjectInfo> {
+        match &self.codex_dir {
+            Some(dir) => crate::codex::list_codex_projects(dir),
+            None => Vec::new(),
+        }
     }
 
     /// Count conversations in a directory
@@ -121,29 +208,39 @@ impl ConversationService {
     /// List all conversations in a project.
     /// Uses lightweight metadata (fast) with caching for instant re-loads.
     pub fn list_conversations(&self, project_path: &str) -> Result<Vec<ConversationMetadata>> {
-        let raw_path = PathBuf::from(project_path);
-        let path = self.validate_path(&raw_path)?;
+        // For Codex, project_path is a workspace cwd — find matching sessions
+        let conversation_files: Vec<PathBuf> = if self.provider == Provider::Codex {
+            match &self.codex_dir {
+                Some(codex_dir) => {
+                    crate::codex::codex_sessions_for_project(codex_dir, project_path)
+                }
+                None => Vec::new(),
+            }
+        } else {
+            let raw_path = PathBuf::from(project_path);
+            let path = self.validate_path(&raw_path)?;
+            WalkDir::new(&path)
+                .max_depth(1)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("jsonl"))
+                .map(|e| e.path().to_path_buf())
+                .collect()
+        };
 
         let mut conversations = Vec::new();
 
-        for entry in WalkDir::new(&path)
-            .max_depth(1)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let entry_path = entry.path();
-            if entry_path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                // Try cache first
-                let cached = {
-                    let cache = self.cache.lock().unwrap();
-                    if let Some(cached) = cache.get(entry_path) {
-                        if let Ok(current_metadata) = fs::metadata(entry_path) {
-                            if let Ok(current_mtime) = current_metadata.modified() {
-                                if current_mtime == cached.mtime {
-                                    Some(cached.metadata.clone())
-                                } else {
-                                    None
-                                }
+        for entry_path_buf in &conversation_files {
+            let entry_path = entry_path_buf.as_path();
+
+            // Try cache first
+            let cached = {
+                let cache = self.cache.lock().unwrap();
+                if let Some(cached) = cache.get(entry_path) {
+                    if let Ok(current_metadata) = fs::metadata(entry_path) {
+                        if let Ok(current_mtime) = current_metadata.modified() {
+                            if current_mtime == cached.mtime {
+                                Some(cached.metadata.clone())
                             } else {
                                 None
                             }
@@ -153,28 +250,46 @@ impl ConversationService {
                     } else {
                         None
                     }
-                };
-
-                let metadata = if let Some(cached_metadata) = cached {
-                    cached_metadata
                 } else {
-                    let meta = self.get_lightweight_metadata(entry_path)?;
-                    if let Ok(file_metadata) = fs::metadata(entry_path) {
-                        if let Ok(mtime) = file_metadata.modified() {
-                            let mut cache = self.cache.lock().unwrap();
-                            cache.insert(
-                                entry_path.to_path_buf(),
-                                CachedMetadata {
-                                    metadata: meta.clone(),
-                                    mtime,
-                                },
-                            );
+                    None
+                }
+            };
+
+            let metadata = if let Some(cached_metadata) = cached {
+                cached_metadata
+            } else {
+                let meta = self.get_lightweight_metadata(entry_path)?;
+                if let Ok(file_metadata) = fs::metadata(entry_path) {
+                    if let Ok(mtime) = file_metadata.modified() {
+                        let mut cache = self.cache.lock().unwrap();
+                        cache.insert(
+                            entry_path.to_path_buf(),
+                            CachedMetadata {
+                                metadata: meta.clone(),
+                                mtime,
+                            },
+                        );
+                    }
+                }
+                meta
+            };
+
+            conversations.push(metadata);
+        }
+
+        // For Codex, add title from history by reading session_meta
+        if self.provider == Provider::Codex {
+            let history = self.codex_history.lock().unwrap();
+            for conv in &mut conversations {
+                // Read session_meta to get the real session id
+                let file_path = PathBuf::from(&conv.file_path);
+                if let Some(meta) = crate::codex::read_session_meta(&file_path) {
+                    if let Some(title) = history.get(&meta.id) {
+                        if conv.title.is_none() {
+                            conv.title = Some(title.clone());
                         }
                     }
-                    meta
-                };
-
-                conversations.push(metadata);
+                }
             }
         }
 
@@ -227,10 +342,15 @@ impl ConversationService {
                 for line in reader.lines() {
                     events += 1;
                     if let Ok(line) = line {
-                        if (line.contains("\"type\":\"user\"")
+                        // Claude events
+                        let is_claude_msg = (line.contains("\"type\":\"user\"")
                             || line.contains("\"type\":\"assistant\""))
-                            && !line.contains("\"isMeta\":true")
-                        {
+                            && !line.contains("\"isMeta\":true");
+                        // Codex events
+                        let is_codex_msg = line.contains("\"type\":\"user_message\"")
+                            || (line.contains("\"type\":\"message\"")
+                                && line.contains("\"role\":\"assistant\""));
+                        if is_claude_msg || is_codex_msg {
                             messages += 1;
                         }
                     }
@@ -416,23 +536,42 @@ impl ConversationService {
     /// Read full conversation with typed events
     pub fn read_conversation(&self, file_path: &str) -> Result<Conversation> {
         let raw_path = PathBuf::from(file_path);
-        let path = self.validate_path(&raw_path)?;
-        // get_conversation_metadata also validates, but we pass the already-canonical path
+        let path = if self.provider == Provider::Codex {
+            // Codex session files live under ~/.codex/sessions, validate directly
+            if !raw_path.exists() {
+                return Err(ClueditError::NotFound(format!(
+                    "File not found: {}",
+                    raw_path.display()
+                )));
+            }
+            raw_path
+        } else {
+            self.validate_path(&raw_path)?
+        };
         let metadata = self.get_conversation_metadata(&path)?;
 
         let file = fs::File::open(&path)?;
         let reader = BufReader::new(file);
 
         let mut events = Vec::new();
+        let use_codex_parser = self.provider == Provider::Codex;
+
         for line in reader.lines() {
             let line = line?;
             if !line.trim().is_empty() {
-                match serde_json::from_str::<ConversationEvent>(&line) {
-                    Ok(event) => events.push(event),
-                    Err(_) => {
-                        // Fallback to raw JSON for completely unrecognized formats
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-                            events.push(ConversationEvent::Unknown(value));
+                if use_codex_parser {
+                    // Use Codex parser — converts to ConversationEvent
+                    if let Some(event) = crate::codex::parse_codex_line(&line) {
+                        events.push(event);
+                    }
+                } else {
+                    // Claude parser
+                    match serde_json::from_str::<ConversationEvent>(&line) {
+                        Ok(event) => events.push(event),
+                        Err(_) => {
+                            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                                events.push(ConversationEvent::Unknown(value));
+                            }
                         }
                     }
                 }

@@ -257,6 +257,14 @@ export interface SearchResult {
 
 export type ExportFormat = "Json" | "JsonPretty" | "Markdown" | "Text" | "ChatML" | "ChatMLTools" | "ShareGPT" | "Alpaca";
 
+export type Provider = "Claude" | "Codex";
+
+export interface ProviderInfo {
+  name: string;
+  provider: Provider;
+  available: boolean;
+}
+
 // Fast search types (Tantivy-based)
 export interface FastSearchResult {
   conversation_id: string;

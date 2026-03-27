@@ -1,4 +1,5 @@
 mod backup_service;
+mod codex;
 mod commands;
 mod content_sanitizer;
 mod conversation_analyzer;
@@ -17,10 +18,8 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 /// Global application state shared across all Tauri commands.
-/// Services are created once at startup and persist for the app lifetime,
-/// ensuring caches are actually reused across IPC calls.
 pub struct AppState {
-    pub conversation_service: ConversationService,
+    pub conversation_service: Mutex<ConversationService>,
     pub backup_service: BackupService,
     pub search_indexer: Arc<Mutex<Option<SearchIndexer>>>,
     pub data_dir: PathBuf,
@@ -28,7 +27,6 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
@@ -46,14 +44,14 @@ pub fn run() {
 
             std::fs::create_dir_all(&data_dir).expect("Failed to create app data directory");
 
-            let claude_dir = dirs::home_dir()
-                .map(|h| h.join(".claude"))
-                .unwrap_or_default();
+            let home = dirs::home_dir().expect("Home directory not found");
+
             let conversation_service = ConversationService::new(&data_dir).unwrap_or_else(|e| {
                 panic!(
-                    "Failed to initialize ConversationService: {}. Expected Claude data at {}",
+                    "Failed to initialize ConversationService: {}. Expected data at {} or {}",
                     e,
-                    claude_dir.display()
+                    home.join(".claude").display(),
+                    home.join(".codex").display()
                 )
             });
 
@@ -61,24 +59,26 @@ pub fn run() {
                 BackupService::new(&data_dir).expect("Failed to initialize BackupService");
 
             app.manage(AppState {
-                conversation_service,
+                conversation_service: Mutex::new(conversation_service),
                 backup_service,
                 search_indexer: Arc::new(Mutex::new(None)),
                 data_dir,
             });
 
-            // Start file watcher for live refresh
-            let claude_projects_dir = {
-                let home = dirs::home_dir().expect("Home directory not found");
-                home.join(".claude").join("projects")
-            };
+            // Start file watcher for live refresh — watch both Claude and Codex dirs
+            let mut watch_paths = Vec::new();
+            let claude_projects_dir = home.join(".claude").join("projects");
             if claude_projects_dir.exists() {
-                match file_watcher::FileWatcher::new(
-                    app.handle().clone(),
-                    vec![claude_projects_dir],
-                ) {
+                watch_paths.push(claude_projects_dir);
+            }
+            let codex_sessions_dir = home.join(".codex").join("sessions");
+            if codex_sessions_dir.exists() {
+                watch_paths.push(codex_sessions_dir);
+            }
+
+            if !watch_paths.is_empty() {
+                match file_watcher::FileWatcher::new(app.handle().clone(), watch_paths) {
                     Ok(watcher) => {
-                        // Keep watcher alive by storing it in managed state
                         app.manage(watcher);
                         log::info!("File watcher started");
                     }
@@ -103,6 +103,9 @@ pub fn run() {
             commands::start_indexing,
             commands::fast_search,
             commands::get_index_stats,
+            // Provider commands
+            commands::list_providers,
+            commands::set_provider,
             // Backup & branch
             commands::create_backup,
             commands::create_backup_at_event,
