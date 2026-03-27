@@ -667,6 +667,12 @@ fn re_ip_addresses() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap())
 }
 
+/// Tool use IDs (toolu_xxx, call_xxx) — Claude/OpenAI internal identifiers
+fn re_tool_ids() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?:toolu_[a-zA-Z0-9]{10,}|call_[a-zA-Z0-9]{10,})").unwrap())
+}
+
 /// Long hex strings in file paths (hashes, snapshot IDs, etc.)
 fn re_path_hashes() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -736,6 +742,39 @@ pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
     if config.redact_ip_addresses {
         result = re_ip_addresses()
             .replace_all(&result, "<ip-address>")
+            .to_string();
+    }
+
+    // Tool IDs (toolu_xxx, call_xxx) — double hash with timestamp salt
+    if config.redact_tool_ids {
+        use sha2::{Digest, Sha256};
+        // Offset timestamp salt: epoch seconds / 3600 (rotates hourly)
+        let salt = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() / 3600)
+            .unwrap_or(0);
+        result = re_tool_ids()
+            .replace_all(&result, |caps: &regex::Captures| {
+                let original = caps.get(0).unwrap().as_str();
+                let prefix = if original.starts_with("toolu_") {
+                    "toolu_"
+                } else {
+                    "call_"
+                };
+                // Double hash: H(H(id + salt) + salt)
+                let mut h1 = Sha256::new();
+                h1.update(original.as_bytes());
+                h1.update(salt.to_le_bytes());
+                let d1 = h1.finalize();
+                let mut h2 = Sha256::new();
+                h2.update(d1);
+                h2.update(salt.to_le_bytes());
+                let d2 = h2.finalize();
+                format!(
+                    "{}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                    prefix, d2[0], d2[1], d2[2], d2[3], d2[4], d2[5]
+                )
+            })
             .to_string();
     }
 

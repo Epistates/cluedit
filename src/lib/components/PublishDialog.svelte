@@ -152,6 +152,7 @@
           redact_emails: redactEmails,
           redact_ip_addresses: redactIpAddresses,
           redact_path_ids: redactPathIds,
+          redact_tool_ids: true,
           custom_rules: [],
         },
       };
