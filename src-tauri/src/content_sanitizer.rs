@@ -170,6 +170,11 @@ pub fn sanitize_for_training(text: &str) -> String {
     };
     let mut result = text.to_string();
 
+    // Strip Codex exec_command metadata headers
+    result = re_codex_exec_metadata()
+        .replace_all(&result, "")
+        .to_string();
+
     // Strip paired tags and their content
     result = re_claude_tags().replace_all(&result, "").to_string();
 
@@ -665,6 +670,15 @@ fn re_emails() -> &'static Regex {
 fn re_ip_addresses() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap())
+}
+
+/// Codex exec_command output metadata prefix
+fn re_codex_exec_metadata() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?m)^Command: /bin/[^\n]*\nChunk ID: [a-f0-9]+\nWall time: [\d.]+ seconds\nProcess exited with code \d+\nOriginal token count: \d+\nOutput:\n?")
+            .unwrap()
+    })
 }
 
 /// Tool use IDs (toolu_xxx, call_xxx) — Claude/OpenAI internal identifiers
