@@ -68,16 +68,16 @@ pub async fn publish_to_huggingface(
     })?;
 
     // Export data while holding the lock, then release before HTTP calls
-    // Apply redaction if configured
-    let redact = config.redact_config.as_ref();
     let (mut content, exported) = {
         let svc = state.conversation_service.lock().unwrap();
         svc.export_all_to_string(config.project_paths.clone(), config.format.clone())?
     };
 
-    // Apply redaction to the exported content
-    if let Some(rc) = redact {
-        content = crate::content_sanitizer::redact_sensitive(&content, rc);
+    // Apply redaction with per-export CSPRNG key
+    if let Some(rc) = config.redact_config.as_ref() {
+        // Generate HMAC key from OS CSPRNG for this export session
+        let rc = rc.clone().with_hmac_key();
+        content = crate::content_sanitizer::redact_sensitive(&content, &rc);
     }
 
     if exported == 0 {

@@ -745,14 +745,11 @@ pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
             .to_string();
     }
 
-    // Tool IDs (toolu_xxx, call_xxx) — double hash with timestamp salt
-    if config.redact_tool_ids {
-        use sha2::{Digest, Sha256};
-        // Offset timestamp salt: epoch seconds / 3600 (rotates hourly)
-        let salt = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() / 3600)
-            .unwrap_or(0);
+    // Tool IDs (toolu_xxx, call_xxx) — HMAC-SHA256 with per-export CSPRNG key
+    if config.redact_tool_ids && !config.hmac_key.is_empty() {
+        use hmac::{Hmac, Mac};
+        type HmacSha256 = Hmac<sha2::Sha256>;
+
         result = re_tool_ids()
             .replace_all(&result, |caps: &regex::Captures| {
                 let original = caps.get(0).unwrap().as_str();
@@ -761,39 +758,37 @@ pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
                 } else {
                     "call_"
                 };
-                // Double hash: H(H(id + salt) + salt)
-                let mut h1 = Sha256::new();
-                h1.update(original.as_bytes());
-                h1.update(salt.to_le_bytes());
-                let d1 = h1.finalize();
-                let mut h2 = Sha256::new();
-                h2.update(d1);
-                h2.update(salt.to_le_bytes());
-                let d2 = h2.finalize();
+                // HMAC-SHA256(csprng_key, id) — deterministic within one
+                // export session, unpredictable across sessions
+                let mut mac = HmacSha256::new_from_slice(&config.hmac_key)
+                    .expect("HMAC accepts any key length");
+                mac.update(original.as_bytes());
+                let tag = mac.finalize().into_bytes();
                 format!(
                     "{}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-                    prefix, d2[0], d2[1], d2[2], d2[3], d2[4], d2[5]
+                    prefix, tag[0], tag[1], tag[2], tag[3], tag[4], tag[5]
                 )
             })
             .to_string();
     }
 
-    // Path hashes/UUIDs — replace with short deterministic hash
-    if config.redact_path_ids {
-        use sha2::{Digest, Sha256};
+    // Path hashes/UUIDs — HMAC with same per-export key
+    if config.redact_path_ids && !config.hmac_key.is_empty() {
+        use hmac::{Hmac, Mac};
+        type HmacSha256 = Hmac<sha2::Sha256>;
+
         result = re_path_hashes()
             .replace_all(&result, |caps: &regex::Captures| {
                 let sep = &caps["sep"];
                 let original = &caps["hash"];
-                // Deterministic 8-char hash so identical IDs map to same value
-                let mut hasher = Sha256::new();
-                hasher.update(original.as_bytes());
-                let digest = hasher.finalize();
-                let short = format!(
-                    "{:02x}{:02x}{:02x}{:02x}",
-                    digest[0], digest[1], digest[2], digest[3]
-                );
-                format!("{}{}", sep, short)
+                let mut mac = HmacSha256::new_from_slice(&config.hmac_key)
+                    .expect("HMAC accepts any key length");
+                mac.update(original.as_bytes());
+                let tag = mac.finalize().into_bytes();
+                format!(
+                    "{}{:02x}{:02x}{:02x}{:02x}",
+                    sep, tag[0], tag[1], tag[2], tag[3]
+                )
             })
             .to_string();
     }

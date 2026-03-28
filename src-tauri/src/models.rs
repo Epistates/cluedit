@@ -466,10 +466,25 @@ pub struct RedactConfig {
     pub redact_tool_ids: bool,
     #[serde(default)]
     pub custom_rules: Vec<RedactRule>,
+    /// Per-export CSPRNG salt for HMAC-based ID anonymization.
+    /// Generated on the backend, never sent from frontend.
+    #[serde(skip_deserializing, default)]
+    pub hmac_key: Vec<u8>,
 }
 
 fn default_true() -> bool {
     true
+}
+
+impl RedactConfig {
+    /// Generate CSPRNG key for HMAC-based ID anonymization.
+    /// Call once per export session — all IDs within the session map consistently.
+    pub fn with_hmac_key(mut self) -> Self {
+        let mut key = vec![0u8; 32];
+        getrandom::getrandom(&mut key).expect("OS CSPRNG failed");
+        self.hmac_key = key;
+        self
+    }
 }
 
 impl Default for RedactConfig {
@@ -482,6 +497,7 @@ impl Default for RedactConfig {
             redact_path_ids: true,
             redact_tool_ids: true,
             custom_rules: Vec::new(),
+            hmac_key: Vec::new(),
         }
     }
 }

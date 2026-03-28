@@ -36,6 +36,8 @@ dirs = "6"
 dunce = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 sha2 = "0.10"
+hmac = "0.12"
+getrandom = "0.2"
 base64 = "0.22"
 log = "0.4"
 env_logger = "0.11"
