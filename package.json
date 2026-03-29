@@ -1,6 +1,6 @@
 {
   "name": "cluedit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CluEdit — Claude Code conversation manager, editor, and training data exporter",
   "type": "module",
   "scripts": {
@@ -19,6 +19,7 @@
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@tauri-apps/plugin-window-state": "^2",
     "bits-ui": "^2.16.3",
+    "dompurify": "^3.3.3",
     "lucide-svelte": "^0.577.0",
     "marked": "^17.0.4",
     "shiki": "^4.0.2"

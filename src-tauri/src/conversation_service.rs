@@ -3,7 +3,7 @@ use crate::content_sanitizer::{
     merge_consecutive_turns, sanitize_for_training, should_skip_message, Turn, DEFAULT_MAX_TOKENS,
 };
 use crate::conversation_analyzer::ConversationAnalyzer;
-use crate::error::{ClueditError, Result};
+use crate::error::{ClueditError, MutexExt, Result};
 use crate::models::*;
 use crate::title_cache::TitleCache;
 use regex::Regex;
@@ -21,6 +21,10 @@ struct CachedMetadata {
     metadata: ConversationMetadata,
     mtime: SystemTime,
 }
+
+/// Maximum conversation file size (500 MB). Files larger than this are rejected
+/// to prevent OOM when reading the entire file into memory.
+const MAX_CONVERSATION_FILE_SIZE: u64 = 500 * 1024 * 1024;
 
 /// Service for managing conversation files from multiple providers.
 /// Designed to be long-lived as Tauri managed state so caches persist.
@@ -47,11 +51,16 @@ impl ConversationService {
             allowed_roots.push(codex_dir);
         }
 
-        // For Codex, also allow the project's cwd path (which is the workspace dir)
+        // For Codex, also allow paths within ~/.codex/ (sessions live there)
+        // but NOT arbitrary filesystem paths
         if self.provider == Provider::Codex {
-            // Codex project paths are workspace cwds, not inside codex_dir
-            // Allow any readable path for Codex conversation listing
-            return Ok(canonical);
+            if let Some(ref codex_dir) = self.codex_dir {
+                if let Ok(codex_canonical) = dunce::canonicalize(codex_dir) {
+                    if canonical.starts_with(&codex_canonical) {
+                        return Ok(canonical);
+                    }
+                }
+            }
         }
 
         for root in &allowed_roots {
@@ -235,7 +244,7 @@ impl ConversationService {
 
             // Try cache first
             let cached = {
-                let cache = self.cache.lock().unwrap();
+                let cache = self.cache.lock_or_err()?;
                 if let Some(cached) = cache.get(entry_path) {
                     if let Ok(current_metadata) = fs::metadata(entry_path) {
                         if let Ok(current_mtime) = current_metadata.modified() {
@@ -261,7 +270,7 @@ impl ConversationService {
                 let meta = self.get_lightweight_metadata(entry_path)?;
                 if let Ok(file_metadata) = fs::metadata(entry_path) {
                     if let Ok(mtime) = file_metadata.modified() {
-                        let mut cache = self.cache.lock().unwrap();
+                        let mut cache = self.cache.lock_or_err()?;
                         cache.insert(
                             entry_path.to_path_buf(),
                             CachedMetadata {
@@ -279,7 +288,7 @@ impl ConversationService {
 
         // For Codex, add title from history by reading session_meta
         if self.provider == Provider::Codex {
-            let history = self.codex_history.lock().unwrap();
+            let history = self.codex_history.lock_or_err()?;
             for conv in &mut conversations {
                 // Read session_meta to get the real session id
                 let file_path = PathBuf::from(&conv.file_path);
@@ -411,7 +420,7 @@ impl ConversationService {
 
         // Check title cache, fall back to first user message
         let (title, summary) = if let Ok(mtime) = metadata.modified() {
-            let title_cache = self.title_cache.lock().unwrap();
+            let title_cache = self.title_cache.lock_or_err()?;
             if let Some(cached) = title_cache.get(&id, mtime) {
                 (cached.title, cached.summary)
             } else {
@@ -456,7 +465,7 @@ impl ConversationService {
         let file_path = &self.validate_path(file_path)?;
         // Check cache first
         {
-            let cache = self.cache.lock().unwrap();
+            let cache = self.cache.lock_or_err()?;
             if let Some(cached) = cache.get(file_path) {
                 if let Ok(current_metadata) = fs::metadata(file_path) {
                     if let Ok(current_mtime) = current_metadata.modified() {
@@ -556,7 +565,7 @@ impl ConversationService {
 
         // Cache the fully analyzed metadata
         if let Ok(mtime) = metadata.modified() {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock_or_err()?;
             cache.insert(
                 file_path.to_path_buf(),
                 CachedMetadata {
@@ -566,7 +575,7 @@ impl ConversationService {
             );
 
             // Also save to persistent title cache
-            let mut title_cache = self.title_cache.lock().unwrap();
+            let mut title_cache = self.title_cache.lock_or_err()?;
             title_cache.set(
                 id,
                 conversation_metadata.title.clone(),
@@ -585,18 +594,17 @@ impl ConversationService {
     /// Read full conversation with typed events
     pub fn read_conversation(&self, file_path: &str) -> Result<Conversation> {
         let raw_path = PathBuf::from(file_path);
-        let path = if self.provider == Provider::Codex {
-            // Codex session files live under ~/.codex/sessions, validate directly
-            if !raw_path.exists() {
-                return Err(ClueditError::NotFound(format!(
-                    "File not found: {}",
-                    raw_path.display()
-                )));
-            }
-            raw_path
-        } else {
-            self.validate_path(&raw_path)?
-        };
+        let path = self.validate_path(&raw_path)?;
+
+        let file_size = fs::metadata(&path)?.len();
+        if file_size > MAX_CONVERSATION_FILE_SIZE {
+            return Err(ClueditError::InvalidPath(format!(
+                "File too large ({:.1} MB, max {} MB)",
+                file_size as f64 / 1_048_576.0,
+                MAX_CONVERSATION_FILE_SIZE / (1024 * 1024)
+            )));
+        }
+
         let metadata = self.get_conversation_metadata(&path)?;
 
         let file = fs::File::open(&path)?;
@@ -649,11 +657,14 @@ impl ConversationService {
             regex::escape(query)
         };
 
-        let regex = if case_sensitive {
-            Regex::new(&safe_query)?
+        let pattern = if case_sensitive {
+            safe_query.clone()
         } else {
-            Regex::new(&format!("(?i){}", safe_query))?
+            format!("(?i){}", safe_query)
         };
+        let regex = regex::RegexBuilder::new(&pattern)
+            .size_limit(1 << 20) // 1 MB compiled size limit
+            .build()?;
 
         let mut results = Vec::new();
 
@@ -685,6 +696,13 @@ impl ConversationService {
 
     /// Search a single file
     fn search_file(&self, file_path: &Path, regex: &Regex) -> Result<SearchResult> {
+        let file_size = fs::metadata(file_path)?.len();
+        if file_size > MAX_CONVERSATION_FILE_SIZE {
+            return Err(ClueditError::InvalidPath(format!(
+                "File too large for search ({:.1} MB)",
+                file_size as f64 / 1_048_576.0
+            )));
+        }
         let file = fs::File::open(file_path)?;
         let reader = BufReader::new(file);
 

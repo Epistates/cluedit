@@ -813,7 +813,10 @@ pub fn redact_sensitive(text: &str, config: &RedactConfig) -> String {
             continue;
         }
         if rule.is_regex {
-            if let Ok(re) = Regex::new(&rule.pattern) {
+            if let Ok(re) = regex::RegexBuilder::new(&rule.pattern)
+                .size_limit(1 << 20) // 1 MB compiled size limit
+                .build()
+            {
                 result = re
                     .replace_all(&result, rule.replacement.as_str())
                     .to_string();

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0] - 2026-03-29
+
+### Added
+- **OS Keychain Token Storage** — HF tokens stored in macOS Keychain / Windows Credential Manager / Linux Secret Service instead of plaintext JSON; legacy tokens auto-migrated on first read
+- **Security Audit CI Job** — `rustsec/audit-check` scans Cargo dependencies for known vulnerabilities on every push and PR
+- **Clippy & Tests in CI** — `cargo clippy -- -D warnings` and `cargo test` now run alongside existing checks
+
+### Fixed
+- **XSS Hardening** — `marked` output sanitized through DOMPurify before `{@html}` rendering
+- **Codex Path Validation** — Codex provider no longer bypasses directory containment checks; paths restricted to `~/.codex/` subtree
+- **UTF-8 Truncation Panic** — backup label truncation now uses char-boundary-safe `truncate_utf8` instead of raw byte slicing
+- **Mutex Poisoning** — all `Mutex::lock().unwrap()` replaced with graceful `lock_or_err()` error propagation via `MutexExt` trait
+- **File Size Limits** — conversation reads and searches reject files over 500 MB to prevent OOM
+- **Regex Complexity Limits** — user-supplied regex patterns (search and custom redaction rules) compiled with `size_limit(1 MB)` to bound resource usage
+
+### Changed
+- **CI pnpm version pinned** to v10 (was `latest`) in both CI and release workflows
+
 ## [0.1.0] - 2026-03-23
 
 ### Added

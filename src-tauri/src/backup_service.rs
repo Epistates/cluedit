@@ -1,4 +1,4 @@
-use crate::error::{ClueditError, Result};
+use crate::error::{ClueditError, MutexExt, Result};
 use crate::models::{BackupInfo, BranchResult};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -219,11 +219,7 @@ impl BackupService {
         let size_bytes = fs::metadata(&backup_path)?.len();
 
         // Truncate label to prevent manifest inflation
-        let safe_label = if label.len() > MAX_LABEL_LENGTH {
-            &label[..MAX_LABEL_LENGTH]
-        } else {
-            label
-        };
+        let safe_label = crate::content_sanitizer::truncate_utf8(label, MAX_LABEL_LENGTH);
 
         let info = BackupInfo {
             id: backup_id,
@@ -239,7 +235,7 @@ impl BackupService {
         };
 
         // Serialize manifest access
-        let _lock = self.manifest_lock.lock().unwrap();
+        let _lock = self.manifest_lock.lock_or_err()?;
         let mut manifest = BackupManifest::load(&self.manifest_path)?;
         manifest.backups.push(info.clone());
         manifest.save(&self.manifest_path)?;
@@ -256,7 +252,7 @@ impl BackupService {
 
     /// List all backups for a specific conversation
     pub fn list_backups(&self, conversation_id: &str) -> Result<Vec<BackupInfo>> {
-        let _lock = self.manifest_lock.lock().unwrap();
+        let _lock = self.manifest_lock.lock_or_err()?;
         let manifest = BackupManifest::load(&self.manifest_path)?;
         Ok(manifest
             .backups
@@ -267,7 +263,7 @@ impl BackupService {
 
     /// List all backups across all conversations
     pub fn list_all_backups(&self) -> Result<Vec<BackupInfo>> {
-        let _lock = self.manifest_lock.lock().unwrap();
+        let _lock = self.manifest_lock.lock_or_err()?;
         let manifest = BackupManifest::load(&self.manifest_path)?;
         Ok(manifest.backups)
     }
@@ -277,7 +273,7 @@ impl BackupService {
     /// Returns the safety backup info so the user can undo the restore.
     pub fn restore_backup(&self, backup_id: &str) -> Result<BackupInfo> {
         // Hold the lock for the entire restore operation (safety backup + copy)
-        let _lock = self.manifest_lock.lock().unwrap();
+        let _lock = self.manifest_lock.lock_or_err()?;
 
         let manifest = BackupManifest::load(&self.manifest_path)?;
         let backup = manifest
@@ -382,11 +378,7 @@ impl BackupService {
 
         let size_bytes = fs::metadata(&backup_path)?.len();
 
-        let safe_label = if label.len() > MAX_LABEL_LENGTH {
-            &label[..MAX_LABEL_LENGTH]
-        } else {
-            label
-        };
+        let safe_label = crate::content_sanitizer::truncate_utf8(label, MAX_LABEL_LENGTH);
 
         let info = BackupInfo {
             id: backup_id,
@@ -411,7 +403,7 @@ impl BackupService {
 
     /// Delete a backup and its file
     pub fn delete_backup(&self, backup_id: &str) -> Result<()> {
-        let _lock = self.manifest_lock.lock().unwrap();
+        let _lock = self.manifest_lock.lock_or_err()?;
 
         let mut manifest = BackupManifest::load(&self.manifest_path)?;
         let idx = manifest
@@ -478,7 +470,7 @@ impl BackupService {
     /// Branch from a backup: create a new conversation from a backup with regenerated IDs.
     /// The new file is placed in the original conversation's project directory.
     pub fn branch_from_backup(&self, backup_id: &str) -> Result<BranchResult> {
-        let _lock = self.manifest_lock.lock().unwrap();
+        let _lock = self.manifest_lock.lock_or_err()?;
 
         let manifest = BackupManifest::load(&self.manifest_path)?;
         let backup = manifest

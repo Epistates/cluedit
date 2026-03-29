@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{MutexExt, Result};
 use crate::models::*;
 use crate::search_indexer::{FastSearchResult, IndexingProgress, SearchIndexer};
 use crate::AppState;
@@ -12,14 +12,14 @@ use tauri::{Emitter, State};
 /// List available providers (Claude, Codex, etc.)
 #[tauri::command]
 pub fn list_providers(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>> {
-    let svc = state.conversation_service.lock().unwrap();
+    let svc = state.conversation_service.lock_or_err()?;
     Ok(svc.available_providers())
 }
 
 /// Switch the active provider
 #[tauri::command]
 pub fn set_provider(state: State<'_, AppState>, provider: Provider) -> Result<()> {
-    let mut svc = state.conversation_service.lock().unwrap();
+    let mut svc = state.conversation_service.lock_or_err()?;
     svc.set_provider(provider);
     Ok(())
 }
@@ -69,7 +69,7 @@ pub async fn publish_to_huggingface(
 
     // Export data while holding the lock, then release before HTTP calls
     let (mut content, exported) = {
-        let svc = state.conversation_service.lock().unwrap();
+        let svc = state.conversation_service.lock_or_err()?;
         svc.export_all_to_string(config.project_paths.clone(), config.format.clone())?
     };
 
@@ -159,7 +159,7 @@ pub fn delete_backup(state: State<'_, AppState>, backup_id: String) -> Result<()
 
 #[tauri::command]
 pub fn list_projects(state: State<'_, AppState>) -> Result<Vec<ProjectInfo>> {
-    state.conversation_service.lock().unwrap().list_projects()
+    state.conversation_service.lock_or_err()?.list_projects()
 }
 
 #[tauri::command]
@@ -285,7 +285,7 @@ pub async fn start_indexing(
     );
 
     let indexer = {
-        let mut indexer_lock = state.search_indexer.lock().unwrap();
+        let mut indexer_lock = state.search_indexer.lock_or_err()?;
         if indexer_lock.is_none() {
             *indexer_lock = Some(SearchIndexer::new(&state.data_dir)?);
         }
@@ -328,7 +328,7 @@ pub async fn fast_search(
     }
 
     let indexer = {
-        let mut indexer_lock = state.search_indexer.lock().unwrap();
+        let mut indexer_lock = state.search_indexer.lock_or_err()?;
         if indexer_lock.is_none() {
             *indexer_lock = Some(SearchIndexer::new(&state.data_dir)?);
         }
@@ -347,7 +347,7 @@ pub async fn get_index_stats(
     state: State<'_, AppState>,
 ) -> Result<std::collections::HashMap<String, usize>> {
     let indexer = {
-        let mut indexer_lock = state.search_indexer.lock().unwrap();
+        let mut indexer_lock = state.search_indexer.lock_or_err()?;
         if indexer_lock.is_none() {
             *indexer_lock = Some(SearchIndexer::new(&state.data_dir)?);
         }

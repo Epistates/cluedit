@@ -34,9 +34,25 @@ pub enum ClueditError {
 
     #[error("Query parser error: {0}")]
     QueryParserError(#[from] tantivy::query::QueryParserError),
+
+    #[error("Internal error: {0}")]
+    Internal(String),
 }
 
 pub type Result<T> = std::result::Result<T, ClueditError>;
+
+/// Extension trait for `Mutex::lock()` that converts poisoned-lock panics into
+/// recoverable `ClueditError::Internal` errors.
+pub trait MutexExt<T> {
+    fn lock_or_err(&self) -> Result<std::sync::MutexGuard<'_, T>>;
+}
+
+impl<T> MutexExt<T> for std::sync::Mutex<T> {
+    fn lock_or_err(&self) -> Result<std::sync::MutexGuard<'_, T>> {
+        self.lock()
+            .map_err(|_| ClueditError::Internal("Lock poisoned".to_string()))
+    }
+}
 
 impl serde::Serialize for ClueditError {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>

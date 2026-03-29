@@ -16,6 +16,7 @@
     getToolResults,
   } from "$lib/types";
   import { marked } from "marked";
+  import DOMPurify from "dompurify";
   import { highlightCode } from "$lib/highlight";
   import { Collapsible } from "bits-ui";
   import {
@@ -157,7 +158,7 @@
   }
 
   function renderMarkdown(text: string): string {
-    return marked.parse(text, { async: false }) as string;
+    return DOMPurify.sanitize(marked.parse(text, { async: false }) as string);
   }
 
   // Post-render: replace placeholders with Shiki output

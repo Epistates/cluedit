@@ -180,34 +180,94 @@ fn validate_token_format(token: &str) -> Result<()> {
     Ok(())
 }
 
-/// Read HF token: env var first, then saved file.
+const KEYRING_SERVICE: &str = "com.cluedit.app";
+const KEYRING_USER: &str = "hf_token";
+
+/// Read from OS keychain.
+fn read_keyring_token() -> Option<String> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+}
+
+/// Write to OS keychain.
+fn write_keyring_token(token: &str) -> std::result::Result<(), keyring::Error> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+    entry.set_password(token)
+}
+
+/// Delete from OS keychain.
+fn delete_keyring_token() {
+    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER) {
+        let _ = entry.delete_credential();
+    }
+}
+
+/// Read HF token: env var → OS keychain → legacy file (migrated on read).
 pub fn read_saved_token(data_dir: &Path) -> Option<String> {
+    // 1. Environment variable (highest priority)
     if let Ok(token) = std::env::var("HF_TOKEN") {
         if !token.is_empty() {
             return Some(token);
         }
     }
 
+    // 2. OS keychain
+    if let Some(token) = read_keyring_token() {
+        return Some(token);
+    }
+
+    // 3. Legacy plaintext file — migrate to keychain on read
     let token_path = data_dir.join("hf_token.json");
     if let Ok(content) = std::fs::read_to_string(&token_path) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-            return v.get("token").and_then(|t| t.as_str()).map(String::from);
+            if let Some(token) = v.get("token").and_then(|t| t.as_str()) {
+                let token = token.to_string();
+                // Migrate: write to keychain and delete plaintext file
+                if write_keyring_token(&token).is_ok() {
+                    let _ = std::fs::remove_file(&token_path);
+                    log::info!("Migrated HF token from plaintext file to OS keychain");
+                }
+                return Some(token);
+            }
         }
     }
 
     None
 }
 
-/// Save HF token to app data directory.
+/// Save HF token to OS keychain (preferred) or file with restrictive permissions.
 pub fn save_token(data_dir: &Path, token: &str) -> Result<()> {
-    let token_path = data_dir.join("hf_token.json");
-    let content = serde_json::json!({ "token": token });
-    std::fs::write(&token_path, serde_json::to_string_pretty(&content)?)?;
+    if let Err(e) = write_keyring_token(token) {
+        log::warn!(
+            "Failed to save token to OS keychain ({}), falling back to file",
+            e
+        );
+        let token_path = data_dir.join("hf_token.json");
+        let content = serde_json::json!({ "token": token });
+        std::fs::write(&token_path, serde_json::to_string_pretty(&content)?)?;
+
+        // Set restrictive permissions (owner read/write only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&token_path, perms)?;
+        }
+    }
+
+    // Clean up legacy plaintext file if keychain write succeeded
+    let legacy_path = data_dir.join("hf_token.json");
+    if legacy_path.exists() && read_keyring_token().is_some() {
+        let _ = std::fs::remove_file(&legacy_path);
+    }
+
     Ok(())
 }
 
-/// Delete saved HF token.
+/// Delete saved HF token from keychain and any legacy file.
 pub fn delete_token(data_dir: &Path) {
+    delete_keyring_token();
     let token_path = data_dir.join("hf_token.json");
     let _ = std::fs::remove_file(&token_path);
 }
